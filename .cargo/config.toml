@@ -2,5 +2,22 @@
 # https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html
 # check status at https://developer.mozilla.org/en-US/docs/Web/API/Clipboard#browser_compatibility
 # we don't use `[build]` because of rust analyzer's build cache invalidation https://github.com/emilk/eframe_template/issues/93
-[target.wasm32-unknown-unknown]
-rustflags = ["--cfg=web_sys_unstable_apis"]
+#[target.wasm32-unknown-unknown]
+#rustflags = ["--cfg=web_sys_unstable_apis"]
+
+[build]
+target = "wasm32-unknown-unknown"
+
+[target.'cfg(target_arch = "wasm32")']
+rustflags = [
+    # Enabled unstable APIs from web_sys
+    "--cfg=web_sys_unstable_apis",
+    # Enables features which are required for shared-memory
+    "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
+    # Enables the possibility to import memory into wasm.
+    # Without --shared-memory it is not possible to use shared WebAssembly.Memory.
+    "-C", "link-args=--shared-memory --import-memory",
+]
+
+[unstable]
+build-std = ["panic_abort", "std"]

@@ -1,3 +1,4 @@
+#![feature(stdarch_wasm_atomic_wait)]
 #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
@@ -20,7 +21,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "eframe template",
         native_options,
-        Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(solgb_eframe::TemplateApp::new(cc)))),
     )
 }
 
@@ -28,16 +29,27 @@ fn main() -> eframe::Result {
 #[cfg(target_arch = "wasm32")]
 fn main() {
     // Redirect `log` message to `console.log` and friends:
+
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    // let rom = include_bytes!("D:\\Emulation\\TestRoms\\GB\\pocket.gb");
+
+    // // solgb::cart::Cart::new(Some(rom.to_vec()), Arc::new(Mutex::new(Vec::new()))).unwrap();
+
+    // let mut gameboy = solgb::gameboy::GameboyBuilder::default().with_rom(rom).build().unwrap();
+    // match gameboy.start() {
+    //     _ => (),
+    // };
 
     let web_options = eframe::WebOptions::default();
 
     wasm_bindgen_futures::spawn_local(async {
+
         let start_result = eframe::WebRunner::new()
             .start(
                 "the_canvas_id",
                 web_options,
-                Box::new(|cc| Ok(Box::new(eframe_template::TemplateApp::new(cc)))),
+                Box::new(|cc| Ok(Box::new(solgb_eframe::TemplateApp::new(cc)))),
             )
             .await;
 
