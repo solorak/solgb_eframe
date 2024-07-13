@@ -1,10 +1,15 @@
 
+use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
+use cpal::traits::StreamTrait;
+use cpal::Stream;
 use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, TextureHandle, TextureOptions};
 use solgb::gameboy;
 use solgb::gameboy::Gameboy;
+
+use crate::audio::Audio;
 
 pub const WIDTH: usize = gameboy::SCREEN_WIDTH as usize;
 pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
@@ -13,16 +18,12 @@ pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
-    // Example stuff:
-    label: String,
-
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    value: f32,
-
     #[serde(skip)]
     gameboy: Gameboy,
     #[serde(skip)]
     gb_texture: Option<TextureHandle>,
+    #[serde(skip)]
+    stream: Option<Stream>,
 }
 
 impl Default for TemplateApp {
@@ -30,16 +31,18 @@ impl Default for TemplateApp {
 
         let rom = include_bytes!("D:\\Emulation\\TestRoms\\GB\\pocket.gb");
         let mut gameboy = solgb::gameboy::GameboyBuilder::default().with_rom(rom).build().unwrap();
+
+        let audio = Audio::new();
+        let stream = audio.get_stream(gameboy.audio_control.clone());
+
         match gameboy.start() {
             _ => (),
         };
 
         Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
             gameboy,
             gb_texture: None,
+            stream: Some(stream),
         }
     }
 }
@@ -58,6 +61,10 @@ impl TemplateApp {
 
         let rom = include_bytes!("D:\\Emulation\\TestRoms\\GB\\pocket.gb");
         let mut gameboy = solgb::gameboy::GameboyBuilder::default().with_rom(rom).build().unwrap();
+
+        let audio = Audio::new();
+        let stream = audio.get_stream(gameboy.audio_control.clone());
+
         match gameboy.start() {
             _ => (),
         };
@@ -73,11 +80,9 @@ impl TemplateApp {
         let gb_texture = Some(TextureHandle::new(texutre_manager, texture_id));
 
         Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
             gameboy,
             gb_texture,
+            stream: Some(stream),
         }
     }
 }
@@ -120,7 +125,7 @@ impl eframe::App for TemplateApp {
                 }
             }
         }
-        self.gameboy.audio_control.dump_audio_buffer();
+        // self.gameboy.audio_control.dump_audio_buffer();
 
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
@@ -141,30 +146,16 @@ impl eframe::App for TemplateApp {
                 }
 
                 egui::widgets::global_dark_light_mode_buttons(ui);
+
+                if ui.button("start").clicked() {
+                    if let Some(stream) = &self.stream {
+                        stream.play().unwrap();
+                    }
+                }
             });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
-
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
-            });
-
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
-            }
-
-            ui.separator();
-
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
-
             if let Some(gb_texture) = &self.gb_texture {
                 ui.vertical_centered(|ui| {
                     let gameboy = egui::Image::new(ImageSource::Texture(SizedTexture::from_handle(

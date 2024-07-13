@@ -32,15 +32,6 @@ fn main() {
 
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
-    // let rom = include_bytes!("D:\\Emulation\\TestRoms\\GB\\pocket.gb");
-
-    // // solgb::cart::Cart::new(Some(rom.to_vec()), Arc::new(Mutex::new(Vec::new()))).unwrap();
-
-    // let mut gameboy = solgb::gameboy::GameboyBuilder::default().with_rom(rom).build().unwrap();
-    // match gameboy.start() {
-    //     _ => (),
-    // };
-
     let web_options = eframe::WebOptions::default();
 
     wasm_bindgen_futures::spawn_local(async {
