@@ -25,6 +25,8 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 bytemuck = "1.16.1"
 cpal = { version = "0.15", features = ["wasm-bindgen"] }
+rfd = "0.14.1"
+crossbeam-channel = "0.5.13"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

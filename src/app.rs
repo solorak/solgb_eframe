@@ -1,11 +1,13 @@
 
-use std::sync::mpsc::Receiver;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use cpal::traits::StreamTrait;
 use cpal::Stream;
+use crossbeam_channel::{Receiver, Sender};
+// use egui::ahash::{HashMap, HashMapExt};
+use std::collections::HashMap;
 use egui::load::SizedTexture;
-use egui::{Color32, ColorImage, ImageData, ImageSource, TextureHandle, TextureOptions};
+use egui::{Color32, ColorImage, ImageData, ImageSource, Key, TextureHandle, TextureOptions};
 use solgb::gameboy;
 use solgb::gameboy::Gameboy;
 
@@ -19,30 +21,29 @@ pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
     #[serde(skip)]
-    gameboy: Gameboy,
+    gameboy: Option<Gameboy>,
     #[serde(skip)]
     gb_texture: Option<TextureHandle>,
     #[serde(skip)]
     stream: Option<Stream>,
+    #[serde(skip)]
+    sender: Sender<(Vec<u8>, String)>,
+    #[serde(skip)]
+    receiver: Receiver<(Vec<u8>, String)>,
+    save_ram: HashMap<String, Arc<Mutex<Vec<u8>>>>,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
-
-        let rom = include_bytes!("D:\\Emulation\\TestRoms\\GB\\pocket.gb");
-        let mut gameboy = solgb::gameboy::GameboyBuilder::default().with_rom(rom).build().unwrap();
-
-        let audio = Audio::new();
-        let stream = audio.get_stream(gameboy.audio_control.clone());
-
-        match gameboy.start() {
-            _ => (),
-        };
+        let (sender, receiver) = crossbeam_channel::unbounded();
 
         Self {
-            gameboy,
+            gameboy: None,
             gb_texture: None,
-            stream: Some(stream),
+            stream: None,
+            sender,
+            receiver,
+            save_ram: HashMap::new(),
         }
     }
 }
@@ -59,30 +60,76 @@ impl TemplateApp {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
 
-        let rom = include_bytes!("D:\\Emulation\\TestRoms\\GB\\pocket.gb");
-        let mut gameboy = solgb::gameboy::GameboyBuilder::default().with_rom(rom).build().unwrap();
+        Self::default()
+    }
 
-        let audio = Audio::new();
-        let stream = audio.get_stream(gameboy.audio_control.clone());
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load(&mut self) {
+        use std::fs::File;
+        use std::io::Read;
+        use rfd::FileDialog;
 
-        match gameboy.start() {
-            _ => (),
+        let path = FileDialog::new()
+            .add_filter("Gameboy Rom", &["gb", "gbc"])
+            .add_filter("Gameboy Color Rom", &["gb", "gbc"])
+            .set_directory("/")
+            .pick_file().unwrap();
+
+        let mut file = File::open(&path).unwrap();
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        self.sender.send(data).unwrap();
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn load(&mut self) {
+        use rfd::AsyncFileDialog;
+
+        let task = AsyncFileDialog::new()
+            .add_filter("Gameboy Rom", &["gb", "gbc"])
+            .add_filter("Gameboy Color Rom", &["gb", "gbc"])
+            .set_directory("/")
+            .pick_file();
+
+        let sender = self.sender.clone();
+
+        let future = async move {
+            let file = task.await;    
+            if let Some(file) = file {
+                let data = file.read().await;
+                sender.send((data, file.file_name())).unwrap();
+            }
         };
+        wasm_bindgen_futures::spawn_local(future);
+    }
 
-        let color_image = Arc::new(ColorImage::new([WIDTH, HEIGHT], Color32::from_black_alpha(0)));
-        let gb_image = ImageData::Color(color_image);
+    fn setup(&mut self) {
+        if let Ok((rom, name)) = self.receiver.try_recv() {
 
-        let texutre_manager = cc.egui_ctx.tex_manager();
-        let texture_id =
-            texutre_manager
-                .write()
-                .alloc("genesis".into(), gb_image, TextureOptions::LINEAR);
-        let gb_texture = Some(TextureHandle::new(texutre_manager, texture_id));
+            let save_data = self.save_ram.entry(name).or_insert(Arc::new(Mutex::new(Vec::new())));
+            // let save_data = Arc::new(Mutex::new(save_data.clone()));
 
-        Self {
-            gameboy,
-            gb_texture,
-            stream: Some(stream),
+            let mut gameboy = solgb::gameboy::GameboyBuilder::default()
+            .with_rom(&rom)
+            .with_model(Some(gameboy::GameboyType::CGB))
+            .with_exram(save_data.clone())
+            .build()
+            .unwrap();
+
+            let audio = Audio::new();
+            let stream = audio.get_stream(gameboy.audio_control.clone());
+
+            match gameboy.start() {
+                Ok(_) => log::info!("Emulation started"),
+                Err(error) => log::error!("Failed to start running emulation: {error}"),
+            };
+
+            self.gameboy = Some(gameboy);
+            self.stream = Some(stream);
+
+            // if let Some(stream) = &self.stream {
+            //     stream.play().unwrap();
+            // }
         }
     }
 }
@@ -96,36 +143,54 @@ impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 
-        if let Ok(buffer_u32) = self.gameboy.video_rec.try_recv() { // recv_timeout(Duration::new(0, 20000000)) {
-            for _ in self.gameboy.video_rec.try_iter() {} //clear receive buffer "frame skip"
-            if let Ok(buffer) = bytemuck::try_cast_slice(&buffer_u32) {
-                let image = Arc::new(ColorImage {
-                    size: [WIDTH, HEIGHT],
-                    pixels: {
-                        assert_eq!(WIDTH * HEIGHT * 4, buffer.len());
-                        buffer
-                            .chunks_exact(4)
-                            .map(|p| Color32::from_rgba_premultiplied(p[2], p[1], p[0], p[3]))
-                            .collect()
-                    },
-                });
-                match &mut self.gb_texture {
-                    Some(texture) => texture.set(image, TextureOptions::NEAREST),
-                    None => {
-                        let color_image = Arc::new(ColorImage::new([WIDTH, HEIGHT], Color32::from_black_alpha(0)));
-                        let gb_image = ImageData::Color(color_image);
+        self.setup();
 
-                        let texutre_manager = ctx.tex_manager();
-                        let texture_id =
-                            texutre_manager
-                                .write()
-                                .alloc("genesis".into(), gb_image, TextureOptions::LINEAR);
-                        self.gb_texture = Some(TextureHandle::new(texutre_manager, texture_id));
+        if let Some(gameboy) = &mut self.gameboy {
+            if let Ok(buffer_u32) = gameboy.video_rec.try_recv() { // recv_timeout(Duration::new(0, 20000000)) {
+                for _ in gameboy.video_rec.try_iter() {} //clear receive buffer "frame skip"
+                if let Ok(buffer) = bytemuck::try_cast_slice(&buffer_u32) {
+                    let image = Arc::new(ColorImage {
+                        size: [WIDTH, HEIGHT],
+                        pixels: {
+                            assert_eq!(WIDTH * HEIGHT * 4, buffer.len());
+                            buffer
+                                .chunks_exact(4)
+                                .map(|p| Color32::from_rgba_premultiplied(p[2], p[1], p[0], p[3]))
+                                .collect()
+                        },
+                    });
+                    match &mut self.gb_texture {
+                        Some(texture) => texture.set(image, TextureOptions::NEAREST),
+                        None => {
+                            let color_image = Arc::new(ColorImage::new([WIDTH, HEIGHT], Color32::from_black_alpha(0)));
+                            let gb_image = ImageData::Color(color_image);
+
+                            let texutre_manager = ctx.tex_manager();
+                            let texture_id =
+                                texutre_manager
+                                    .write()
+                                    .alloc("genesis".into(), gb_image, TextureOptions::LINEAR);
+                            self.gb_texture = Some(TextureHandle::new(texutre_manager, texture_id));
+                        }
                     }
                 }
             }
+            
+            //Update inputs
+            ctx.input(|i| {
+                let pressed = [
+                    i.key_down(Key::Z),
+                    i.key_down(Key::X),
+                    i.key_down(Key::W),
+                    i.key_down(Key::Enter),
+                    i.key_down(Key::ArrowRight),
+                    i.key_down(Key::ArrowLeft),
+                    i.key_down(Key::ArrowUp),
+                    i.key_down(Key::ArrowDown),
+                ];
+                gameboy.input_sender.send(pressed).unwrap();
+            });
         }
-        // self.gameboy.audio_control.dump_audio_buffer();
 
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
@@ -151,6 +216,10 @@ impl eframe::App for TemplateApp {
                     if let Some(stream) = &self.stream {
                         stream.play().unwrap();
                     }
+                }
+
+                if ui.button("open").clicked() {
+                    self.load();
                 }
             });
         });

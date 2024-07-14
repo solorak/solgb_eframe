@@ -1,4 +1,3 @@
-use std::sync::mpsc::Receiver;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait},
