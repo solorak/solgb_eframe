@@ -4,6 +4,7 @@ var filesToCache = [
   './index.html',
   './solgb_eframe.js',
   './solgb_eframe.wasm',
+  './coi-serviceworker.min.js',
 ];
 
 /* Start the service worker and cache all of the app's content */

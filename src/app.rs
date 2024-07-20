@@ -1,17 +1,22 @@
 
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
-
 use cpal::traits::StreamTrait;
 use cpal::Stream;
 use crossbeam_channel::{Receiver, Sender};
-// use egui::ahash::{HashMap, HashMapExt};
-use std::collections::HashMap;
 use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, Key, TextureHandle, TextureOptions};
+use gilrs::{Button, Gilrs};
 use solgb::gameboy;
 use solgb::gameboy::Gameboy;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 use crate::audio::Audio;
+use crate::saves::{self, Saves};
 
 pub const WIDTH: usize = gameboy::SCREEN_WIDTH as usize;
 pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
@@ -25,12 +30,26 @@ pub struct TemplateApp {
     #[serde(skip)]
     gb_texture: Option<TextureHandle>,
     #[serde(skip)]
+    audio: Audio,
+    #[serde(skip)]
     stream: Option<Stream>,
     #[serde(skip)]
     sender: Sender<(Vec<u8>, String)>,
     #[serde(skip)]
     receiver: Receiver<(Vec<u8>, String)>,
-    save_ram: HashMap<String, Arc<Mutex<Vec<u8>>>>,
+    #[serde(skip)]
+    gilrs: Gilrs,
+    #[serde(skip)]
+    current_name: Option<String>,
+    // #[serde(skip)]
+    // save_ram: Arc<Mutex<Vec<u8>>>,
+    // save_ram: HashMap<String, Arc<Mutex<Vec<u8>>>>,
+    #[serde(skip)]
+    last_save: Instant,
+    #[serde(skip)]
+    saves: Option<Saves>,
+    #[serde(skip)]
+    started: bool,
 }
 
 impl Default for TemplateApp {
@@ -40,10 +59,16 @@ impl Default for TemplateApp {
         Self {
             gameboy: None,
             gb_texture: None,
+            audio: Audio::new(),
             stream: None,
             sender,
             receiver,
-            save_ram: HashMap::new(),
+            gilrs: Gilrs::new().unwrap(),
+            current_name: None,
+            // save_ram: Arc::new(Mutex::new(Vec::new())),
+            last_save: Instant::now(),
+            saves: Saves::new(),
+            started: false,
         }
     }
 }
@@ -105,31 +130,41 @@ impl TemplateApp {
 
     fn setup(&mut self) {
         if let Ok((rom, name)) = self.receiver.try_recv() {
+            if let Some(saves) = &mut self.saves {
+                saves.save_ram = if let Ok(Some(encoded)) = saves.storage.get_item(&name) {
+                    let save_ram = STANDARD.decode(encoded).unwrap_or_default();
+                    Arc::new(Mutex::new(save_ram))
+                } else {
+                    Arc::new(Mutex::new(Vec::new()))
+                };
 
-            let save_data = self.save_ram.entry(name).or_insert(Arc::new(Mutex::new(Vec::new())));
-            // let save_data = Arc::new(Mutex::new(save_data.clone()));
+                self.current_name = Some(name);
 
-            let mut gameboy = solgb::gameboy::GameboyBuilder::default()
-            .with_rom(&rom)
-            .with_model(Some(gameboy::GameboyType::CGB))
-            .with_exram(save_data.clone())
-            .build()
-            .unwrap();
+                let mut gameboy = solgb::gameboy::GameboyBuilder::default()
+                .with_rom(&rom)
+                .with_model(Some(gameboy::GameboyType::CGB))
+                .with_exram(saves.save_ram.clone())
+                .build()
+                .unwrap();
 
-            let audio = Audio::new();
-            let stream = audio.get_stream(gameboy.audio_control.clone());
+                if let Some(stream) = &self.stream {
+                    if let Err(error) = stream.pause() {
+                        log::warn!("Unable to pause stream: {error}");
+                    }
+                }
 
-            match gameboy.start() {
-                Ok(_) => log::info!("Emulation started"),
-                Err(error) => log::error!("Failed to start running emulation: {error}"),
-            };
+                let stream = self.audio.get_stream(gameboy.audio_control.clone());
 
-            self.gameboy = Some(gameboy);
-            self.stream = Some(stream);
+                match gameboy.start() {
+                    Ok(_) => log::info!("Emulation started"),
+                    Err(error) => log::error!("Failed to start running emulation: {error}"),
+                };
 
-            // if let Some(stream) = &self.stream {
-            //     stream.play().unwrap();
-            // }
+                self.gameboy = Some(gameboy);
+                self.stream = Some(stream);
+
+                self.started = false;
+            }
         }
     }
 }
@@ -145,9 +180,14 @@ impl eframe::App for TemplateApp {
 
         self.setup();
 
+        if let Some(name) = &self.current_name {
+            if let Some(saves) = &mut self.saves {
+                saves.save_current(&name);
+            }
+        }
+
         if let Some(gameboy) = &mut self.gameboy {
-            if let Ok(buffer_u32) = gameboy.video_rec.try_recv() { // recv_timeout(Duration::new(0, 20000000)) {
-                for _ in gameboy.video_rec.try_iter() {} //clear receive buffer "frame skip"
+            if let Ok(buffer_u32) = gameboy.video_rec.try_recv() {
                 if let Ok(buffer) = bytemuck::try_cast_slice(&buffer_u32) {
                     let image = Arc::new(ColorImage {
                         size: [WIDTH, HEIGHT],
@@ -177,8 +217,10 @@ impl eframe::App for TemplateApp {
             }
             
             //Update inputs
+            let mut inputs = [false; 8];
+
             ctx.input(|i| {
-                let pressed = [
+                inputs = [
                     i.key_down(Key::Z),
                     i.key_down(Key::X),
                     i.key_down(Key::W),
@@ -188,8 +230,23 @@ impl eframe::App for TemplateApp {
                     i.key_down(Key::ArrowUp),
                     i.key_down(Key::ArrowDown),
                 ];
-                gameboy.input_sender.send(pressed).unwrap();
             });
+
+            while let Some(_event) = self.gilrs.next_event() {}
+            for (_id, gamepad) in self.gilrs.gamepads() {
+                log::info!("{}", gamepad.name());
+
+                inputs[0] = gamepad.is_pressed(Button::South);
+                inputs[1] = gamepad.is_pressed(Button::West);
+                inputs[2] = gamepad.is_pressed(Button::Select);
+                inputs[3] = gamepad.is_pressed(Button::Start);
+                inputs[4] = gamepad.is_pressed(Button::DPadRight);
+                inputs[5] = gamepad.is_pressed(Button::DPadLeft);
+                inputs[6] = gamepad.is_pressed(Button::DPadUp);
+                inputs[7] = gamepad.is_pressed(Button::DPadDown);
+            }
+
+            gameboy.input_sender.send(inputs).unwrap();
         }
 
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
@@ -212,26 +269,54 @@ impl eframe::App for TemplateApp {
 
                 egui::widgets::global_dark_light_mode_buttons(ui);
 
-                if ui.button("start").clicked() {
-                    if let Some(stream) = &self.stream {
-                        stream.play().unwrap();
-                    }
-                }
-
                 if ui.button("open").clicked() {
                     self.load();
                 }
+
+                egui::menu::menu_button(ui, "Save Ram", |ui| {
+                    if ui.button("download").clicked() {    
+                        if let Some(name) = &self.current_name {
+                            if let Some(saves) = &mut self.saves {
+                                if let Err(err) = saves.download(name) {
+                                    log::info!("{err}");
+                                }
+                            }
+                        }
+                        ui.close_menu();
+                    }
+    
+                    if let Some(saves) = &mut self.saves {
+                        if ui.button("download all").clicked() {
+                            if let Err(err) = saves.download_all() {
+                                log::error!("{err}")
+                            }
+                            ui.close_menu();
+                        }
+                    }
+                })
             });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+
             if let Some(gb_texture) = &self.gb_texture {
-                ui.vertical_centered(|ui| {
-                    let gameboy = egui::Image::new(ImageSource::Texture(SizedTexture::from_handle(
-                        &gb_texture,
-                    )))
-                    .fit_to_fraction([1.0, 1.0].into());
-                    ui.add(gameboy);
+                ui.centered_and_justified(|ui| {
+                    if !self.started {
+                        if ui.button("start").clicked() {
+                            if let Some(stream) = &self.stream {
+                                if let Err(error) = stream.play() {
+                                    log::warn!("Unable to start stream: {error}");
+                                }
+                            }
+                            self.started = true;
+                        }
+                    } else {
+                        let gameboy = egui::Image::new(ImageSource::Texture(SizedTexture::from_handle(
+                            &gb_texture,
+                        )))
+                        .fit_to_fraction([1.0, 1.0].into());
+                        ui.add(gameboy);
+                    }
                 });
             }
 

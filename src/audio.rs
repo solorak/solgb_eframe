@@ -57,10 +57,12 @@ impl Audio {
                                     Some(val) => val,
                                     None => {
                                         loop { //This jank is because we cant block
+                                            log::info!("Attempting to try_get auudio buffer");
                                             if let Ok(samples) = sample_rec.try_get_audio_buffer() {
                                                 buffer = samples.into_iter();
                                                 break
                                             }
+                                            log::info!("Done with try_get auudio buffer");
                                         }
                                         // if let Ok(data) = sample_rec.try_recv() {
                                         //     buffer = data.into_iter()
