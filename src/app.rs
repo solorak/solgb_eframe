@@ -1,4 +1,7 @@
 
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use cpal::traits::StreamTrait;
 use cpal::Stream;
@@ -33,41 +36,32 @@ pub struct TemplateApp {
     #[serde(skip)]
     stream: Option<Stream>,
     #[serde(skip)]
-    sender: Sender<(Vec<u8>, String)>,
-    #[serde(skip)]
-    receiver: Receiver<(Vec<u8>, String)>,
-    #[serde(skip)]
     gilrs: Gilrs,
     #[serde(skip)]
     current_name: Option<String>,
-    // #[serde(skip)]
-    // save_ram: Arc<Mutex<Vec<u8>>>,
-    // save_ram: HashMap<String, Arc<Mutex<Vec<u8>>>>,
     #[serde(skip)]
     last_save: Instant,
     #[serde(skip)]
     saves: Option<Saves>,
     #[serde(skip)]
     started: bool,
+    #[serde(skip)]
+    events: Rc<RefCell<VecDeque<Event>>>,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
-        let (sender, receiver) = crossbeam_channel::unbounded();
-
         Self {
             gameboy: None,
             gb_texture: None,
             audio: Audio::new(),
             stream: None,
-            sender,
-            receiver,
             gilrs: Gilrs::new().unwrap(),
             current_name: None,
-            // save_ram: Arc::new(Mutex::new(Vec::new())),
             last_save: Instant::now(),
             saves: Saves::new(),
             started: false,
+            events: Rc::new(RefCell::new(VecDeque::new()))
         }
     }
 }
@@ -115,55 +109,58 @@ impl TemplateApp {
             .set_directory("/")
             .pick_file();
 
-        let sender = self.sender.clone();
+        let events = self.events.clone();
 
         let future = async move {
             let file = task.await;    
             if let Some(file) = file {
                 let data = file.read().await;
-                sender.send((data, file.file_name())).unwrap();
+                events.borrow_mut().push_back(Event::OpenRom(file.file_name(), data));
             }
         };
         wasm_bindgen_futures::spawn_local(future);
     }
 
     fn setup(&mut self) {
-        if let Ok((rom, name)) = self.receiver.try_recv() {
-            if let Some(saves) = &mut self.saves {
-                saves.save_ram = if let Ok(Some(encoded)) = saves.storage.get_item(&name) {
-                    let save_ram = STANDARD.decode(encoded).unwrap_or_default();
-                    Arc::new(Mutex::new(save_ram))
-                } else {
-                    Arc::new(Mutex::new(Vec::new()))
-                };
+        match self.events.borrow_mut().pop_front() {
+            Some(Event::OpenRom(name, rom)) => {
+                if let Some(saves) = &mut self.saves {
+                    saves.save_ram = if let Ok(Some(encoded)) = saves.storage.get_item(&name) {
+                        let save_ram = STANDARD.decode(encoded).unwrap_or_default();
+                        Arc::new(Mutex::new(save_ram))
+                    } else {
+                        Arc::new(Mutex::new(Vec::new()))
+                    };
 
-                self.current_name = Some(name);
+                    self.current_name = Some(name);
 
-                let mut gameboy = solgb::gameboy::GameboyBuilder::default()
-                .with_rom(&rom)
-                .with_model(Some(gameboy::GameboyType::CGB))
-                .with_exram(saves.save_ram.clone())
-                .build()
-                .unwrap();
+                    let mut gameboy = solgb::gameboy::GameboyBuilder::default()
+                    .with_rom(&rom)
+                    .with_model(Some(gameboy::GameboyType::CGB))
+                    .with_exram(saves.save_ram.clone())
+                    .build()
+                    .unwrap();
 
-                if let Some(stream) = &self.stream {
-                    if let Err(error) = stream.pause() {
-                        log::warn!("Unable to pause stream: {error}");
+                    if let Some(stream) = &self.stream {
+                        if let Err(error) = stream.pause() {
+                            log::warn!("Unable to pause stream: {error}");
+                        }
                     }
+
+                    let stream = self.audio.get_stream(gameboy.audio_control.clone());
+
+                    match gameboy.start() {
+                        Ok(_) => log::info!("Emulation started"),
+                        Err(error) => log::error!("Failed to start running emulation: {error}"),
+                    };
+
+                    self.gameboy = Some(gameboy);
+                    self.stream = Some(stream);
+
+                    self.started = false;
                 }
-
-                let stream = self.audio.get_stream(gameboy.audio_control.clone());
-
-                match gameboy.start() {
-                    Ok(_) => log::info!("Emulation started"),
-                    Err(error) => log::error!("Failed to start running emulation: {error}"),
-                };
-
-                self.gameboy = Some(gameboy);
-                self.stream = Some(stream);
-
-                self.started = false;
             }
+            _ => (),
         }
     }
 }
@@ -341,4 +338,9 @@ fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
         );
         ui.label(".");
     });
+}
+
+enum Event {
+    OpenRom(String, Vec<u8>),
+    SaveUpload(String, Vec<u8>),
 }
