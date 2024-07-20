@@ -58,7 +58,7 @@ impl Saves {
             .unix_permissions(0o755)
             .last_modified_time(zip::DateTime::default_for_write());
 
-        for i in 0..self.storage.length().unwrap_or(0) {
+        for i in 0..=self.storage.length().unwrap_or(0) {
             let Ok(Some(key)) = self.storage.key(i) else {
                 log::error!("Unable to get key at storage index: {i}");
                 continue

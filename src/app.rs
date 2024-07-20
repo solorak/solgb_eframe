@@ -1,5 +1,4 @@
 
-use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use cpal::traits::StreamTrait;
 use cpal::Stream;
@@ -12,11 +11,11 @@ use solgb::gameboy::Gameboy;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
+use web_time::Instant;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 use crate::audio::Audio;
-use crate::saves::{self, Saves};
+use crate::saves::Saves;
 
 pub const WIDTH: usize = gameboy::SCREEN_WIDTH as usize;
 pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
