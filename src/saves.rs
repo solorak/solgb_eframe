@@ -7,14 +7,17 @@ use web_sys;
 use wasm_bindgen::JsCast;
 use zip::write::SimpleFileOptions;
 
+use crate::app::{Event, Events};
+
 pub struct Saves {
     pub storage: Storage,
     last_save: Instant,
     pub save_ram: Arc<Mutex<Vec<u8>>>,
+    events: Events,
 }
 
 impl Saves {
-    pub fn new() -> Option<Self> {
+    pub fn new(events: Events) -> Option<Self> {
         let Some(Some(storage)) = web_sys::window().and_then(|s| s.local_storage().ok()) else {
             return None
         };
@@ -22,21 +25,24 @@ impl Saves {
             storage,
             last_save: Instant::now(),
             save_ram: Arc::new(Mutex::new(Vec::new())),
+            events,
         })
     }
 
-    pub fn save_current(&mut self, current_name: &str) {
+    pub fn save_current(&mut self, name: &str) {
         const SAVE_INTERVAL: u64 = 5;
         if self.last_save.elapsed() > Duration::from_secs(SAVE_INTERVAL) {
-            log::info!("Attempting to try_lock save ram mutex");
             if let Ok(save_ram) = &self.save_ram.try_lock() {
                 let encoded = STANDARD.encode(save_ram.to_vec());
-                self.storage.set_item(current_name, &encoded).unwrap();
+                self.storage.set_item(name, &encoded).unwrap();
                 self.last_save = Instant::now();
-                log::info!("Stored save ram data for {current_name}");
             }
-            log::info!("done with save ram mutex");
         }
+    }
+
+    pub fn save(&mut self, name: &str, data: &[u8]) {
+        let encoded = STANDARD.encode(data);
+        self.storage.set_item(name, &encoded).unwrap();
     }
 
     pub fn download(&mut self, name: &str) -> Result<(), String> {
@@ -45,7 +51,7 @@ impl Saves {
             _ => return Err(format!("Unable to retrive item or item with name: {name} does not exist")),
         };
 
-        self.download_helper(name, &item)?;
+        self.download_helper(&format!("{name}.sav"), &item)?;
         Ok(())
     }
 
@@ -68,7 +74,7 @@ impl Saves {
                 let item = item.replace("\"", "");
                 match &STANDARD.decode(item) {
                     Ok(decoded) => {
-                        zip.start_file(key, options).unwrap_or(());
+                        zip.start_file(format!("{key}.sav").into_boxed_str(), options).unwrap_or(());
                         zip.write_all(decoded).unwrap_or_default();
                     }
                     Err(err) => log::error!("{err}"),
@@ -105,5 +111,26 @@ impl Saves {
         link.click();
 
         Ok(())
+    }
+
+    pub fn upload(&mut self) {
+        use rfd::AsyncFileDialog;
+
+        let task = AsyncFileDialog::new()
+            .add_filter("Gameboy Save Ram File", &["sav"])
+            .add_filter("All Files", &["*"])
+            .set_directory("/")
+            .pick_file();
+
+        let events = self.events.clone();
+
+        let future = async move {
+            let file = task.await;    
+            if let Some(file) = file {
+                let data = file.read().await;
+                events.push(Event::SaveUpload(file.file_name(), data))
+            }
+        };
+        wasm_bindgen_futures::spawn_local(future);
     }
 }

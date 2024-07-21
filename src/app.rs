@@ -5,7 +5,6 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use cpal::traits::StreamTrait;
 use cpal::Stream;
-use crossbeam_channel::{Receiver, Sender};
 use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, Key, TextureHandle, TextureOptions};
 use gilrs::{Button, Gilrs};
@@ -38,30 +37,28 @@ pub struct TemplateApp {
     #[serde(skip)]
     gilrs: Gilrs,
     #[serde(skip)]
-    current_name: Option<String>,
-    #[serde(skip)]
     last_save: Instant,
     #[serde(skip)]
     saves: Option<Saves>,
     #[serde(skip)]
     started: bool,
     #[serde(skip)]
-    events: Rc<RefCell<VecDeque<Event>>>,
+    events: Events,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
+        let events = Events::default();
         Self {
             gameboy: None,
             gb_texture: None,
             audio: Audio::new(),
             stream: None,
             gilrs: Gilrs::new().unwrap(),
-            current_name: None,
             last_save: Instant::now(),
-            saves: Saves::new(),
+            saves: Saves::new(events.clone()),
             started: false,
-            events: Rc::new(RefCell::new(VecDeque::new()))
+            events,
         }
     }
 }
@@ -115,15 +112,23 @@ impl TemplateApp {
             let file = task.await;    
             if let Some(file) = file {
                 let data = file.read().await;
-                events.borrow_mut().push_back(Event::OpenRom(file.file_name(), data));
+                events.push(Event::OpenRom(file.file_name(), data));
             }
         };
         wasm_bindgen_futures::spawn_local(future);
     }
 
     fn setup(&mut self) {
-        match self.events.borrow_mut().pop_front() {
+        match self.events.get_next() {
             Some(Event::OpenRom(name, rom)) => {
+
+                let name = if let Ok(rom_info) = solgb::cart::RomInfo::new(&rom) {
+                    rom_info.get_name()
+                } else {
+                    log::error!("ROM does not appear to be a gameboy game");
+                    return
+                };
+
                 if let Some(saves) = &mut self.saves {
                     saves.save_ram = if let Ok(Some(encoded)) = saves.storage.get_item(&name) {
                         let save_ram = STANDARD.decode(encoded).unwrap_or_default();
@@ -132,7 +137,7 @@ impl TemplateApp {
                         Arc::new(Mutex::new(Vec::new()))
                     };
 
-                    self.current_name = Some(name);
+                    // self.current_name = Some(name);
 
                     let mut gameboy = solgb::gameboy::GameboyBuilder::default()
                     .with_rom(&rom)
@@ -160,6 +165,11 @@ impl TemplateApp {
                     self.started = false;
                 }
             }
+            Some(Event::SaveUpload(name, data)) => {
+                if let Some(saves) = &mut self.saves {
+                    saves.save(&name, &data);
+                }
+            }
             _ => (),
         }
     }
@@ -176,9 +186,9 @@ impl eframe::App for TemplateApp {
 
         self.setup();
 
-        if let Some(name) = &self.current_name {
-            if let Some(saves) = &mut self.saves {
-                saves.save_current(&name);
+        if let Some(saves) = &mut self.saves {
+            if let Some(gameboy) = &self.gameboy {
+                saves.save_current(&gameboy.rom_info.get_name());
             }
         }
 
@@ -271,9 +281,10 @@ impl eframe::App for TemplateApp {
 
                 egui::menu::menu_button(ui, "Save Ram", |ui| {
                     if ui.button("download").clicked() {    
-                        if let Some(name) = &self.current_name {
+                        if let Some(gameboy) = &self.gameboy {
+                            let name = gameboy.rom_info.get_name();
                             if let Some(saves) = &mut self.saves {
-                                if let Err(err) = saves.download(name) {
+                                if let Err(err) = saves.download(&name) {
                                     log::info!("{err}");
                                 }
                             }
@@ -286,6 +297,13 @@ impl eframe::App for TemplateApp {
                             if let Err(err) = saves.download_all() {
                                 log::error!("{err}")
                             }
+                            ui.close_menu();
+                        }
+                    }
+
+                    if let Some(saves) = &mut self.saves {
+                        if ui.button("upload save").clicked() {
+                            saves.upload();
                             ui.close_menu();
                         }
                     }
@@ -340,7 +358,26 @@ fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
     });
 }
 
-enum Event {
+#[derive(Clone)]
+pub struct Events (Rc<RefCell<VecDeque<Event>>>);
+
+impl Events {
+    pub fn get_next(&self) -> Option<Event> {
+        self.0.borrow_mut().pop_front()
+    }
+
+    pub fn push(&self, event: Event) {
+        self.0.borrow_mut().push_back(event)
+    }
+}
+
+impl Default for Events {
+    fn default() -> Self {
+        Self(Rc::new(RefCell::new(VecDeque::new())))
+    }
+}
+
+pub enum Event {
     OpenRom(String, Vec<u8>),
     SaveUpload(String, Vec<u8>),
 }
