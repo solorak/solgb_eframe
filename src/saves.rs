@@ -1,5 +1,6 @@
 
 use std::{collections::BTreeMap, io::{self, Write}, sync::{Arc, Mutex}};
+use solgb::cart::RomInfo;
 use web_sys::Storage;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use web_time::{Duration, Instant};
@@ -15,6 +16,7 @@ pub struct Saves {
     pub save_ram: Arc<Mutex<Vec<u8>>>,
     events: Events,
     save_data: BTreeMap<String, (String, String)>,
+    rom_info: Option<RomInfo>,
 }
 
 impl Saves {
@@ -28,17 +30,28 @@ impl Saves {
             save_ram: Arc::new(Mutex::new(Vec::new())),
             events,
             save_data: BTreeMap::default(),
+            rom_info: None,
         })
+    }
+
+    pub fn set_rom_info(&mut self, rom_info: Option<RomInfo>) {
+        self.rom_info = rom_info;
     }
 
     pub fn save_current(&mut self, name: &str) {
         const SAVE_INTERVAL: u64 = 5;
         if self.last_save.elapsed() > Duration::from_secs(SAVE_INTERVAL) {
+            if let Some(rom_info) = &self.rom_info {
+                if !rom_info.is_battery_backed() {
+                    return
+                }
+            }
+
             if let Ok(save_ram) = &self.save_ram.try_lock() {
                 let encoded = STANDARD.encode(save_ram.to_vec());
                 self.storage.set_item(name, &encoded).unwrap();
-                self.last_save = Instant::now();
             }
+            self.last_save = Instant::now();
         }
     }
 

@@ -139,14 +139,20 @@ impl TemplateApp {
                         Arc::new(Mutex::new(Vec::new()))
                     };
 
-                    // self.current_name = Some(name);
-
-                    let mut gameboy = solgb::gameboy::GameboyBuilder::default()
+                    let mut gameboy = match solgb::gameboy::GameboyBuilder::default()
                     .with_rom(&rom)
                     .with_model(Some(gameboy::GameboyType::CGB))
                     .with_exram(saves.save_ram.clone())
-                    .build()
-                    .unwrap();
+                    .build() {
+                        Ok(gameboy) => gameboy,
+                        Err(err) => {
+                            log::error!("Unable to setup gameboy: {err}");
+                            saves.set_rom_info(None);
+                            return
+                        }
+                    };
+
+                    saves.set_rom_info(Some(gameboy.rom_info.clone()));
 
                     if let Some(stream) = &self.stream {
                         if let Err(error) = stream.pause() {
