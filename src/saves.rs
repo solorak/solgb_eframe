@@ -1,5 +1,5 @@
 
-use std::{io::{self, Write}, sync::{Arc, Mutex}};
+use std::{collections::BTreeMap, io::{self, Write}, sync::{Arc, Mutex}};
 use web_sys::Storage;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use web_time::{Duration, Instant};
@@ -14,6 +14,7 @@ pub struct Saves {
     last_save: Instant,
     pub save_ram: Arc<Mutex<Vec<u8>>>,
     events: Events,
+    save_data: BTreeMap<String, (String, String)>,
 }
 
 impl Saves {
@@ -26,6 +27,7 @@ impl Saves {
             last_save: Instant::now(),
             save_ram: Arc::new(Mutex::new(Vec::new())),
             events,
+            save_data: BTreeMap::default(),
         })
     }
 
@@ -51,7 +53,7 @@ impl Saves {
             _ => return Err(format!("Unable to retrive item or item with name: {name} does not exist")),
         };
 
-        self.download_helper(&format!("{name}.sav"), &item)?;
+        Saves::download_helper(&format!("{name}.sav"), &item)?;
         Ok(())
     }
 
@@ -89,13 +91,12 @@ impl Saves {
             }
         };
 
-        self.download_helper("saves.zip", &encoded)?;
+        Saves::download_helper("saves.zip", &encoded)?;
 
         Ok(())
     }
 
-    fn download_helper(&mut self, name: &str, base64_data: &str) -> Result<(), String> {
-
+    fn download_helper(name: &str, base64_data: &str) -> Result<(), String> {
         if let Err(err) = STANDARD.decode(base64_data) {
             return Err(format!("String is not base64: {err}"));
         }
@@ -132,5 +133,65 @@ impl Saves {
             }
         };
         wasm_bindgen_futures::spawn_local(future);
+    }
+
+    pub fn show_save_manager(&mut self, ui: &mut egui::Ui) {
+
+        if self.save_data.is_empty() {
+            for i in 0..=self.storage.length().unwrap_or(0) {
+                let Ok(Some(key)) = self.storage.key(i) else {
+                    log::error!("Unable to get key at storage index: {i}");
+                    continue
+                };
+                if let Ok(Some(item)) = self.storage.get(&key) {
+                    if &key != "app" && &key != "egui_memory_ron"  { // Ignore egui entries
+                        self.save_data.insert(key.clone(), (key, item));
+                    }
+                };
+            }
+        }
+
+        egui::Grid::new("save_manager").min_col_width(0.0).show(ui, |ui| {
+            let mut modified: bool = false;
+            for (key, (key_field, item)) in &mut self.save_data {
+                ui.horizontal(|ui| {
+                    ui.set_width(200.0);
+                    if ui.text_edit_singleline(key_field).lost_focus() {
+                        if key != key_field {
+                            let _ = self.storage.set(key_field, item);
+                            let _ = self.storage.delete(key);
+                            modified = true;
+                        }
+                    };
+                });
+
+                // ui.set_min_width(0.0);
+                if ui.button("⬇").clicked() {
+                    let _ = Saves::download_helper(&format!("{key_field}.sav"), &item);
+                    ui.close_menu();
+                }
+
+                if ui.button("X").clicked() {
+                    let _ = self.storage.delete(key);
+                    modified = true;
+                };
+                // ui.add_enabled_ui(false, |ui| ui.text_edit_multiline(item));
+                ui.end_row();
+            }
+            if modified {
+                self.save_data.clear();
+            }
+        });
+
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            if ui.button("Upload").clicked() {
+                self.upload();
+            }
+            if ui.button("Download All").clicked() {
+                if let Err(err) = self.download_all() {
+                    log::error!("{err}")
+                }
+            }
+        });
     }
 }

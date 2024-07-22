@@ -44,6 +44,7 @@ pub struct TemplateApp {
     started: bool,
     #[serde(skip)]
     events: Events,
+    save_manager_open: bool,
 }
 
 impl Default for TemplateApp {
@@ -59,6 +60,7 @@ impl Default for TemplateApp {
             saves: Saves::new(events.clone()),
             started: false,
             events,
+            save_manager_open: true,
         }
     }
 }
@@ -279,35 +281,10 @@ impl eframe::App for TemplateApp {
                     self.load();
                 }
 
-                egui::menu::menu_button(ui, "Save Ram", |ui| {
-                    if ui.button("download").clicked() {    
-                        if let Some(gameboy) = &self.gameboy {
-                            let name = gameboy.rom_info.get_name();
-                            if let Some(saves) = &mut self.saves {
-                                if let Err(err) = saves.download(&name) {
-                                    log::info!("{err}");
-                                }
-                            }
-                        }
-                        ui.close_menu();
-                    }
-    
-                    if let Some(saves) = &mut self.saves {
-                        if ui.button("download all").clicked() {
-                            if let Err(err) = saves.download_all() {
-                                log::error!("{err}")
-                            }
-                            ui.close_menu();
-                        }
-                    }
-
-                    if let Some(saves) = &mut self.saves {
-                        if ui.button("upload save").clicked() {
-                            saves.upload();
-                            ui.close_menu();
-                        }
-                    }
-                })
+                if ui.button("save manager").clicked() {
+                    self.save_manager_open = true;
+                    ui.close_menu();
+                }
             });
         });
 
@@ -339,6 +316,17 @@ impl eframe::App for TemplateApp {
                 egui::warn_if_debug_build(ui);
             });
         });
+
+        egui::Window::new("Save Manager")
+            .title_bar(true)
+            .resizable(false)
+            .collapsible(false)
+            .open(&mut self.save_manager_open)
+            .show(ctx, |ui| {
+                if let Some(saves) = &mut self.saves {
+                    saves.show_save_manager(ui);
+                }
+            });
 
         ctx.request_repaint();
     }
