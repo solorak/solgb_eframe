@@ -8,7 +8,8 @@ use cpal::Stream;
 use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, Key, TextureHandle, TextureOptions};
 use gilrs::{Button, Gilrs};
-use solgb::gameboy;
+use serde::{Deserialize, Serialize};
+use solgb::gameboy::{self};
 use solgb::gameboy::Gameboy;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -45,6 +46,7 @@ pub struct TemplateApp {
     #[serde(skip)]
     events: Events,
     save_manager_open: bool,
+    volume: Volume,
 }
 
 impl Default for TemplateApp {
@@ -61,6 +63,7 @@ impl Default for TemplateApp {
             started: false,
             events,
             save_manager_open: true,
+            volume: Volume::default(),
         }
     }
 }
@@ -114,7 +117,7 @@ impl TemplateApp {
             let file = task.await;    
             if let Some(file) = file {
                 let data = file.read().await;
-                events.push(Event::OpenRom(file.file_name(), data));
+                events.push(Event::OpenRom(data));
             }
         };
         wasm_bindgen_futures::spawn_local(future);
@@ -122,7 +125,7 @@ impl TemplateApp {
 
     fn setup(&mut self) {
         match self.events.get_next() {
-            Some(Event::OpenRom(name, rom)) => {
+            Some(Event::OpenRom(rom)) => {
 
                 let name = if let Ok(rom_info) = solgb::cart::RomInfo::new(&rom) {
                     rom_info.get_name()
@@ -291,6 +294,11 @@ impl eframe::App for TemplateApp {
                     self.save_manager_open = true;
                     ui.close_menu();
                 }
+
+                if ui.button("volume control").clicked() {
+                    self.volume.window_visible = true;
+                    ui.close_menu();
+                }
             });
         });
 
@@ -334,6 +342,37 @@ impl eframe::App for TemplateApp {
                 }
             });
 
+        egui::Window::new("Volume Control")
+            .title_bar(true)
+            .resizable(false)
+            .collapsible(false)
+            .open(&mut self.volume.window_visible)
+            .show(ctx, |ui| {
+                if ui.add(egui::Slider::new(&mut self.volume.master, 0..=100).text("Master")).changed() {
+                    self.audio.volume.store(self.volume.master, std::sync::atomic::Ordering::Relaxed);
+                };
+                if ui.add(egui::Slider::new(&mut self.volume.square_1, 0..=100).text("Square 1")).changed() {
+                    if let Some(gameboy) = &self.gameboy {
+                        gameboy.audio_control.set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32)
+                    }
+                };
+                if ui.add(egui::Slider::new(&mut self.volume.square_2, 0..=100).text("Square 2")).changed() {
+                    if let Some(gameboy) = &self.gameboy {
+                        gameboy.audio_control.set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32)
+                    }
+                };
+                if ui.add(egui::Slider::new(&mut self.volume.wave, 0..=100).text("Wave")).changed() {
+                    if let Some(gameboy) = &self.gameboy {
+                        gameboy.audio_control.set_volume(gameboy::Channel::Wave, self.volume.wave as f32)
+                    }
+                };
+                if ui.add(egui::Slider::new(&mut self.volume.noise, 0..=100).text("Noise")).changed() {
+                    if let Some(gameboy) = &self.gameboy {
+                        gameboy.audio_control.set_volume(gameboy::Channel::Noise, self.volume.noise as f32)
+                    }
+                };
+            });
+
         ctx.request_repaint();
     }
 }
@@ -372,6 +411,29 @@ impl Default for Events {
 }
 
 pub enum Event {
-    OpenRom(String, Vec<u8>),
+    OpenRom(Vec<u8>),
     SaveUpload(String, Vec<u8>),
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct Volume {
+    pub master: u8,
+    pub square_1: u32,
+    pub square_2: u32,
+    pub wave: u32,
+    pub noise: u32,
+    pub window_visible: bool,
+}
+
+impl Default for Volume {
+    fn default() -> Self {
+        Self {
+            master: 100,
+            square_1: 100,
+            square_2: 100,
+            wave: 100,
+            noise: 100,
+            window_visible: false
+        }
+    }
 }

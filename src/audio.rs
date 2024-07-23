@@ -1,4 +1,6 @@
 
+use std::sync::{atomic::AtomicU8, Arc};
+
 use cpal::{
     traits::{DeviceTrait, HostTrait},
     Device, FromSample, SizedSample, Stream, StreamConfig, SupportedStreamConfig,
@@ -8,6 +10,7 @@ use solgb::gameboy::AudioControl;
 pub struct Audio {
     pub device: Device,
     pub config: SupportedStreamConfig,
+    pub volume: Arc<AtomicU8>,
 }
 
 impl Audio {
@@ -18,26 +21,28 @@ impl Audio {
         let config = device.default_output_config().unwrap();
         log::info!("Default output config: {:?}", config);
 
-        Self { device, config }
+        let volume = Arc::new(AtomicU8::new(0));
+
+        Self { device, config, volume }
     }
 
     pub fn get_stream(&self, sample_rec: AudioControl) -> Stream {
         match self.config.sample_format() {
-            cpal::SampleFormat::I8 => self.setup::<i8>(sample_rec),
-            cpal::SampleFormat::I16 => self.setup::<i16>(sample_rec),
-            cpal::SampleFormat::I32 => self.setup::<i32>(sample_rec),
-            cpal::SampleFormat::I64 => self.setup::<i64>(sample_rec),
-            cpal::SampleFormat::U8 => self.setup::<u8>(sample_rec),
-            cpal::SampleFormat::U16 => self.setup::<u16>(sample_rec),
-            cpal::SampleFormat::U32 => self.setup::<u32>(sample_rec),
-            cpal::SampleFormat::U64 => self.setup::<u64>(sample_rec),
-            cpal::SampleFormat::F32 => self.setup::<f32>(sample_rec),
-            cpal::SampleFormat::F64 => self.setup::<f64>(sample_rec),
+            cpal::SampleFormat::I8 => self.setup::<i8>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::I16 => self.setup::<i16>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::I32 => self.setup::<i32>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::I64 => self.setup::<i64>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::U8 => self.setup::<u8>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::U16 => self.setup::<u16>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::U32 => self.setup::<u32>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::U64 => self.setup::<u64>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::F32 => self.setup::<f32>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::F64 => self.setup::<f64>(sample_rec, self.volume.clone()),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
         }
     }
 
-    fn setup<T>(&self, mut sample_rec: AudioControl) -> Stream
+    fn setup<T>(&self, mut sample_rec: AudioControl, volume: Arc<AtomicU8>) -> Stream
     where
         T: SizedSample + FromSample<f32>,
     {
@@ -65,7 +70,8 @@ impl Audio {
                                         buffer.next().unwrap_or(last)
                                     }
                                 };
-                                *value = T::from_sample(last);
+                                let volume = (volume.load(std::sync::atomic::Ordering::Relaxed) as f32) / 100.0;
+                                *value = T::from_sample(last * volume);
                             }
                         }
                     },
