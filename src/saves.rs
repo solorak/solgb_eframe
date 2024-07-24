@@ -149,7 +149,6 @@ impl Saves {
     }
 
     pub fn show_save_manager(&mut self, ui: &mut egui::Ui) {
-
         if self.save_data.is_empty() {
             for i in 0..=self.storage.length().unwrap_or(0) {
                 let Ok(Some(key)) = self.storage.key(i) else {

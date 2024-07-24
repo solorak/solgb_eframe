@@ -9,6 +9,7 @@ use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, Key, TextureHandle, TextureOptions};
 use gilrs::{Button, Gilrs};
 use serde::{Deserialize, Serialize};
+use solgb::cart::CartType;
 use solgb::gameboy::{self, GameboyType};
 use solgb::gameboy::Gameboy;
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,6 +23,9 @@ use crate::saves::Saves;
 
 pub const WIDTH: usize = gameboy::SCREEN_WIDTH as usize;
 pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
+
+pub const DMG_ROM_NAME: &'static str = "_DMGBOOTROM";
+pub const CGB_ROM_NAME: &'static str = "_CGBBOOTROM";
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -129,8 +133,8 @@ impl TemplateApp {
         match self.events.get_next() {
             Some(Event::OpenRom(rom)) => {
 
-                let name = if let Ok(rom_info) = solgb::cart::RomInfo::new(&rom) {
-                    rom_info.get_name()
+                let (name, rom_type) = if let Ok(rom_info) = solgb::cart::RomInfo::new(&rom) {
+                    (rom_info.get_name(), rom_info.get_type().clone())
                 } else {
                     log::error!("ROM does not appear to be a gameboy game");
                     return
@@ -144,10 +148,23 @@ impl TemplateApp {
                         Arc::new(Mutex::new(Vec::new()))
                     };
 
+                    let boot_rom = match (&self.boot_rom_options.gb_type, &rom_type) {
+                        (None, CartType::GB) | (Some(GameboyType::DMG), CartType::GB) | (Some(GameboyType::DMG), CartType::Hybrid) | (Some(GameboyType::DMG), CartType::CGB) => {
+                            let encoded = saves.storage.get_item(&DMG_ROM_NAME).unwrap_or(None).unwrap_or_default();
+                            STANDARD.decode(encoded).ok()
+                        }
+                        (None, CartType::CGB) | (None, CartType::Hybrid) | (Some(GameboyType::CGB), CartType::GB) | (Some(GameboyType::CGB), CartType::CGB) | (Some(GameboyType::CGB), CartType::Hybrid) => {
+                            let encoded = saves.storage.get_item(&CGB_ROM_NAME).unwrap_or(None).unwrap_or_default();
+                            STANDARD.decode(encoded).ok()
+                        }
+                    };
+
+
                     let mut gameboy = match solgb::gameboy::GameboyBuilder::default()
                     .with_rom(&rom)
                     .with_model(self.boot_rom_options.gb_type.clone())
                     .with_exram(saves.save_ram.clone())
+                    .with_boot_rom(boot_rom)
                     .build() {
                         Ok(gameboy) => gameboy,
                         Err(err) => {
@@ -187,6 +204,14 @@ impl TemplateApp {
             Some(Event::SaveUpload(name, data)) => {
                 if let Some(saves) = &mut self.saves {
                     saves.save(&name, &data);
+                }
+            }
+            Some(Event::BootromUpload(br_type, data)) => {
+                if let Some(saves) = &mut self.saves {
+                    match br_type {
+                        GameboyType::DMG => saves.save(DMG_ROM_NAME, &data),
+                        GameboyType::CGB => saves.save(CGB_ROM_NAME, &data),
+                    }
                 }
             }
             _ => (),
@@ -397,6 +422,49 @@ impl eframe::App for TemplateApp {
                 ui.radio_value(&mut self.boot_rom_options.gb_type, Some(GameboyType::DMG), "DMG");
                 ui.radio_value(&mut self.boot_rom_options.gb_type, Some(GameboyType::CGB), "CGB");
             });
+
+            if ui.button("upload DMG").clicked() {
+                use rfd::AsyncFileDialog;
+
+                let task = AsyncFileDialog::new()
+                    .add_filter("Gameboy bootroom", &["bin", "rom"])
+                    .add_filter("All Files", &["*"])
+                    .set_directory("/")
+                    .pick_file();
+
+                let events = self.events.clone();
+
+                let future = async move {
+                    let file = task.await;    
+                    if let Some(file) = file {
+                        let data = file.read().await;
+                        events.push(Event::BootromUpload(GameboyType::DMG, data))
+                    }
+                };
+                wasm_bindgen_futures::spawn_local(future);
+            }
+
+            if ui.button("upload CGB").clicked() {
+                use rfd::AsyncFileDialog;
+
+                let task = AsyncFileDialog::new()
+                    .add_filter("Gameboy bootroom", &["bin", "rom"])
+                    .add_filter("All Files", &["*"])
+                    .set_directory("/")
+                    .pick_file();
+
+                let events = self.events.clone();
+
+                let future = async move {
+                    let file = task.await;    
+                    if let Some(file) = file {
+                        let data = file.read().await;
+                        events.push(Event::BootromUpload(GameboyType::CGB, data))
+                    }
+                };
+                wasm_bindgen_futures::spawn_local(future);
+            }
+
         });
 
         ctx.request_repaint();
@@ -415,30 +483,6 @@ fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
         );
         ui.label(".");
     });
-}
-
-#[derive(Clone)]
-pub struct Events (Rc<RefCell<VecDeque<Event>>>);
-
-impl Events {
-    pub fn get_next(&self) -> Option<Event> {
-        self.0.borrow_mut().pop_front()
-    }
-
-    pub fn push(&self, event: Event) {
-        self.0.borrow_mut().push_back(event)
-    }
-}
-
-impl Default for Events {
-    fn default() -> Self {
-        Self(Rc::new(RefCell::new(VecDeque::new())))
-    }
-}
-
-pub enum Event {
-    OpenRom(Vec<u8>),
-    SaveUpload(String, Vec<u8>),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -482,8 +526,27 @@ impl BootRomOptions {
     }
 }
 
-// #[derive(Serialize, Deserialize, PartialEq, Clone)]
-// pub enum GameboyType {
-//     DMG,
-//     CGB,
-// }
+#[derive(Clone)]
+pub struct Events (Rc<RefCell<VecDeque<Event>>>);
+
+impl Events {
+    pub fn get_next(&self) -> Option<Event> {
+        self.0.borrow_mut().pop_front()
+    }
+
+    pub fn push(&self, event: Event) {
+        self.0.borrow_mut().push_back(event)
+    }
+}
+
+impl Default for Events {
+    fn default() -> Self {
+        Self(Rc::new(RefCell::new(VecDeque::new())))
+    }
+}
+
+pub enum Event {
+    OpenRom(Vec<u8>),
+    SaveUpload(String, Vec<u8>),
+    BootromUpload(GameboyType, Vec<u8>),
+}
