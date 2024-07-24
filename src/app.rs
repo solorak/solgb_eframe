@@ -9,7 +9,7 @@ use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, Key, TextureHandle, TextureOptions};
 use gilrs::{Button, Gilrs};
 use serde::{Deserialize, Serialize};
-use solgb::gameboy::{self};
+use solgb::gameboy::{self, GameboyType};
 use solgb::gameboy::Gameboy;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -47,6 +47,7 @@ pub struct TemplateApp {
     events: Events,
     save_manager_open: bool,
     volume: Volume,
+    boot_rom_options: BootRomOptions,
 }
 
 impl Default for TemplateApp {
@@ -64,6 +65,7 @@ impl Default for TemplateApp {
             events,
             save_manager_open: true,
             volume: Volume::default(),
+            boot_rom_options: BootRomOptions::new(),
         }
     }
 }
@@ -144,7 +146,7 @@ impl TemplateApp {
 
                     let mut gameboy = match solgb::gameboy::GameboyBuilder::default()
                     .with_rom(&rom)
-                    .with_model(Some(gameboy::GameboyType::CGB))
+                    .with_model(self.boot_rom_options.gb_type.clone())
                     .with_exram(saves.save_ram.clone())
                     .build() {
                         Ok(gameboy) => gameboy,
@@ -154,6 +156,12 @@ impl TemplateApp {
                             return
                         }
                     };
+
+                    self.audio.volume.store(self.volume.master, std::sync::atomic::Ordering::Relaxed);
+                    gameboy.audio_control.set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32);
+                    gameboy.audio_control.set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32);
+                    gameboy.audio_control.set_volume(gameboy::Channel::Wave, self.volume.wave as f32);
+                    gameboy.audio_control.set_volume(gameboy::Channel::Noise, self.volume.noise as f32);
 
                     saves.set_rom_info(Some(gameboy.rom_info.clone()));
 
@@ -299,6 +307,11 @@ impl eframe::App for TemplateApp {
                     self.volume.window_visible = true;
                     ui.close_menu();
                 }
+
+                if ui.button("bootrom options").clicked() {
+                    self.boot_rom_options.window_visible = true;
+                    ui.close_menu();
+                }
             });
         });
 
@@ -343,35 +356,48 @@ impl eframe::App for TemplateApp {
             });
 
         egui::Window::new("Volume Control")
-            .title_bar(true)
-            .resizable(false)
-            .collapsible(false)
-            .open(&mut self.volume.window_visible)
-            .show(ctx, |ui| {
-                if ui.add(egui::Slider::new(&mut self.volume.master, 0..=100).text("Master")).changed() {
-                    self.audio.volume.store(self.volume.master, std::sync::atomic::Ordering::Relaxed);
-                };
-                if ui.add(egui::Slider::new(&mut self.volume.square_1, 0..=100).text("Square 1")).changed() {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy.audio_control.set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32)
-                    }
-                };
-                if ui.add(egui::Slider::new(&mut self.volume.square_2, 0..=100).text("Square 2")).changed() {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy.audio_control.set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32)
-                    }
-                };
-                if ui.add(egui::Slider::new(&mut self.volume.wave, 0..=100).text("Wave")).changed() {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy.audio_control.set_volume(gameboy::Channel::Wave, self.volume.wave as f32)
-                    }
-                };
-                if ui.add(egui::Slider::new(&mut self.volume.noise, 0..=100).text("Noise")).changed() {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy.audio_control.set_volume(gameboy::Channel::Noise, self.volume.noise as f32)
-                    }
-                };
+        .title_bar(true)
+        .resizable(false)
+        .collapsible(false)
+        .open(&mut self.volume.window_visible)
+        .show(ctx, |ui| {
+            if ui.add(egui::Slider::new(&mut self.volume.master, 0..=100).text("Master")).changed() {
+                self.audio.volume.store(self.volume.master, std::sync::atomic::Ordering::Relaxed);
+            };
+            if ui.add(egui::Slider::new(&mut self.volume.square_1, 0..=100).text("Square 1")).changed() {
+                if let Some(gameboy) = &self.gameboy {
+                    gameboy.audio_control.set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32)
+                }
+            };
+            if ui.add(egui::Slider::new(&mut self.volume.square_2, 0..=100).text("Square 2")).changed() {
+                if let Some(gameboy) = &self.gameboy {
+                    gameboy.audio_control.set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32)
+                }
+            };
+            if ui.add(egui::Slider::new(&mut self.volume.wave, 0..=100).text("Wave")).changed() {
+                if let Some(gameboy) = &self.gameboy {
+                    gameboy.audio_control.set_volume(gameboy::Channel::Wave, self.volume.wave as f32)
+                }
+            };
+            if ui.add(egui::Slider::new(&mut self.volume.noise, 0..=100).text("Noise")).changed() {
+                if let Some(gameboy) = &self.gameboy {
+                    gameboy.audio_control.set_volume(gameboy::Channel::Noise, self.volume.noise as f32)
+                }
+            };
+        });
+
+        egui::Window::new("Boot ROMs")
+        .title_bar(true)
+        .resizable(false)
+        .collapsible(false)
+        .open(&mut self.boot_rom_options.window_visible)
+        .show(ctx, |ui| {
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+                ui.radio_value(&mut self.boot_rom_options.gb_type, None, "Auto");
+                ui.radio_value(&mut self.boot_rom_options.gb_type, Some(GameboyType::DMG), "DMG");
+                ui.radio_value(&mut self.boot_rom_options.gb_type, Some(GameboyType::CGB), "CGB");
             });
+        });
 
         ctx.request_repaint();
     }
@@ -437,3 +463,27 @@ impl Default for Volume {
         }
     }
 }
+
+//Bootrom
+#[derive(Serialize, Deserialize)]
+pub struct BootRomOptions {
+    pub use_bootrom: bool,
+    pub gb_type: Option<GameboyType>,
+    pub window_visible: bool,
+}
+
+impl BootRomOptions {
+    pub fn new() -> Self {
+        Self {
+            use_bootrom: false,
+            gb_type:None,
+            window_visible: false,
+        }
+    }
+}
+
+// #[derive(Serialize, Deserialize, PartialEq, Clone)]
+// pub enum GameboyType {
+//     DMG,
+//     CGB,
+// }
