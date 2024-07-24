@@ -10,7 +10,7 @@ use solgb::gameboy::AudioControl;
 pub struct Audio {
     pub device: Device,
     pub config: SupportedStreamConfig,
-    pub volume: Arc<AtomicU8>,
+    volume: Arc<AtomicU8>,
 }
 
 impl Audio {
@@ -40,6 +40,13 @@ impl Audio {
             cpal::SampleFormat::F64 => self.setup::<f64>(sample_rec, self.volume.clone()),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
         }
+    }
+
+    pub fn set_volume(&self, mut volume: u8) {
+        if volume > 100 {
+            volume = 100;
+        }
+        self.volume.store(volume, std::sync::atomic::Ordering::Relaxed)
     }
 
     fn setup<T>(&self, mut sample_rec: AudioControl, volume: Arc<AtomicU8>) -> Stream

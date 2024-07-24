@@ -157,7 +157,7 @@ impl TemplateApp {
                         }
                     };
 
-                    self.audio.volume.store(self.volume.master, std::sync::atomic::Ordering::Relaxed);
+                    self.audio.set_volume(self.volume.master);
                     gameboy.audio_control.set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32);
                     gameboy.audio_control.set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32);
                     gameboy.audio_control.set_volume(gameboy::Channel::Wave, self.volume.wave as f32);
@@ -362,7 +362,7 @@ impl eframe::App for TemplateApp {
         .open(&mut self.volume.window_visible)
         .show(ctx, |ui| {
             if ui.add(egui::Slider::new(&mut self.volume.master, 0..=100).text("Master")).changed() {
-                self.audio.volume.store(self.volume.master, std::sync::atomic::Ordering::Relaxed);
+                self.audio.set_volume(self.volume.master);
             };
             if ui.add(egui::Slider::new(&mut self.volume.square_1, 0..=100).text("Square 1")).changed() {
                 if let Some(gameboy) = &self.gameboy {
