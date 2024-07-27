@@ -1,6 +1,7 @@
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::ops::RangeInclusive;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use cpal::traits::StreamTrait;
@@ -148,7 +149,7 @@ impl TemplateApp {
                         Arc::new(Mutex::new(Vec::new()))
                     };
 
-                    let boot_rom = match (&self.boot_rom_options.gb_type, &rom_type) {
+                    let mut boot_rom = match (&self.boot_rom_options.gb_type, &rom_type) {
                         (None, CartType::GB) | (Some(GameboyType::DMG), CartType::GB) | (Some(GameboyType::DMG), CartType::Hybrid) | (Some(GameboyType::DMG), CartType::CGB) => {
                             let encoded = saves.storage.get_item(&DMG_ROM_NAME).unwrap_or(None).unwrap_or_default();
                             STANDARD.decode(encoded).ok()
@@ -158,6 +159,10 @@ impl TemplateApp {
                             STANDARD.decode(encoded).ok()
                         }
                     };
+
+                    if !self.boot_rom_options.use_bootrom {
+                        boot_rom = None;
+                    }
 
 
                     let mut gameboy = match solgb::gameboy::GameboyBuilder::default()
@@ -174,7 +179,7 @@ impl TemplateApp {
                         }
                     };
 
-                    self.audio.set_volume(self.volume.master);
+                    self.audio.set_volume(self.volume.master as u8);
                     gameboy.audio_control.set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32);
                     gameboy.audio_control.set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32);
                     gameboy.audio_control.set_volume(gameboy::Channel::Wave, self.volume.wave as f32);
@@ -259,7 +264,7 @@ impl eframe::App for TemplateApp {
                             let texture_id =
                                 texutre_manager
                                     .write()
-                                    .alloc("genesis".into(), gb_image, TextureOptions::LINEAR);
+                                    .alloc("genesis".into(), gb_image, TextureOptions::NEAREST);
                             self.gb_texture = Some(TextureHandle::new(texutre_manager, texture_id));
                         }
                     }
@@ -299,12 +304,7 @@ impl eframe::App for TemplateApp {
             gameboy.input_sender.send(inputs).unwrap();
         }
 
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
-
             egui::menu::bar(ui, |ui| {
                 // NOTE: no File->Quit on web pages!
                 let is_web = cfg!(target_arch = "wasm32");
@@ -341,7 +341,6 @@ impl eframe::App for TemplateApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-
             if let Some(gb_texture) = &self.gb_texture {
                 ui.centered_and_justified(|ui| {
                     if !self.started {
@@ -386,25 +385,26 @@ impl eframe::App for TemplateApp {
         .collapsible(false)
         .open(&mut self.volume.window_visible)
         .show(ctx, |ui| {
-            if ui.add(egui::Slider::new(&mut self.volume.master, 0..=100).text("Master")).changed() {
-                self.audio.set_volume(self.volume.master);
+            const VOLUME_RANGE: RangeInclusive<u32> = 0..=100;
+            if ui.add(egui::Slider::new(&mut self.volume.master, VOLUME_RANGE).text("Master")).changed() {
+                self.audio.set_volume(self.volume.master as u8);
             };
-            if ui.add(egui::Slider::new(&mut self.volume.square_1, 0..=100).text("Square 1")).changed() {
+            if ui.add(egui::Slider::new(&mut self.volume.square_1, VOLUME_RANGE).text("Square 1")).changed() {
                 if let Some(gameboy) = &self.gameboy {
                     gameboy.audio_control.set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32)
                 }
             };
-            if ui.add(egui::Slider::new(&mut self.volume.square_2, 0..=100).text("Square 2")).changed() {
+            if ui.add(egui::Slider::new(&mut self.volume.square_2, VOLUME_RANGE).text("Square 2")).changed() {
                 if let Some(gameboy) = &self.gameboy {
                     gameboy.audio_control.set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32)
                 }
             };
-            if ui.add(egui::Slider::new(&mut self.volume.wave, 0..=100).text("Wave")).changed() {
+            if ui.add(egui::Slider::new(&mut self.volume.wave, VOLUME_RANGE).text("Wave")).changed() {
                 if let Some(gameboy) = &self.gameboy {
                     gameboy.audio_control.set_volume(gameboy::Channel::Wave, self.volume.wave as f32)
                 }
             };
-            if ui.add(egui::Slider::new(&mut self.volume.noise, 0..=100).text("Noise")).changed() {
+            if ui.add(egui::Slider::new(&mut self.volume.noise, VOLUME_RANGE).text("Noise")).changed() {
                 if let Some(gameboy) = &self.gameboy {
                     gameboy.audio_control.set_volume(gameboy::Channel::Noise, self.volume.noise as f32)
                 }
@@ -417,53 +417,58 @@ impl eframe::App for TemplateApp {
         .collapsible(false)
         .open(&mut self.boot_rom_options.window_visible)
         .show(ctx, |ui| {
+
+            ui.checkbox(&mut self.boot_rom_options.use_bootrom, "Use Bootrom");
+
             ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                 ui.radio_value(&mut self.boot_rom_options.gb_type, None, "Auto");
                 ui.radio_value(&mut self.boot_rom_options.gb_type, Some(GameboyType::DMG), "DMG");
                 ui.radio_value(&mut self.boot_rom_options.gb_type, Some(GameboyType::CGB), "CGB");
             });
 
-            if ui.button("upload DMG").clicked() {
-                use rfd::AsyncFileDialog;
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+                if ui.button("upload DMG").clicked() {
+                    use rfd::AsyncFileDialog;
 
-                let task = AsyncFileDialog::new()
-                    .add_filter("Gameboy bootroom", &["bin", "rom"])
-                    .add_filter("All Files", &["*"])
-                    .set_directory("/")
-                    .pick_file();
+                    let task = AsyncFileDialog::new()
+                        .add_filter("Gameboy bootroom", &["bin", "rom"])
+                        .add_filter("All Files", &["*"])
+                        .set_directory("/")
+                        .pick_file();
 
-                let events = self.events.clone();
+                    let events = self.events.clone();
 
-                let future = async move {
-                    let file = task.await;    
-                    if let Some(file) = file {
-                        let data = file.read().await;
-                        events.push(Event::BootromUpload(GameboyType::DMG, data))
-                    }
-                };
-                wasm_bindgen_futures::spawn_local(future);
-            }
+                    let future = async move {
+                        let file = task.await;    
+                        if let Some(file) = file {
+                            let data = file.read().await;
+                            events.push(Event::BootromUpload(GameboyType::DMG, data))
+                        }
+                    };
+                    wasm_bindgen_futures::spawn_local(future);
+                }
 
-            if ui.button("upload CGB").clicked() {
-                use rfd::AsyncFileDialog;
+                if ui.button("upload CGB").clicked() {
+                    use rfd::AsyncFileDialog;
 
-                let task = AsyncFileDialog::new()
-                    .add_filter("Gameboy bootroom", &["bin", "rom"])
-                    .add_filter("All Files", &["*"])
-                    .set_directory("/")
-                    .pick_file();
+                    let task = AsyncFileDialog::new()
+                        .add_filter("Gameboy Color bootroom", &["bin", "rom"])
+                        .add_filter("All Files", &["*"])
+                        .set_directory("/")
+                        .pick_file();
 
-                let events = self.events.clone();
+                    let events = self.events.clone();
 
-                let future = async move {
-                    let file = task.await;    
-                    if let Some(file) = file {
-                        let data = file.read().await;
-                        events.push(Event::BootromUpload(GameboyType::CGB, data))
-                    }
-                };
-                wasm_bindgen_futures::spawn_local(future);
-            }
+                    let future = async move {
+                        let file = task.await;    
+                        if let Some(file) = file {
+                            let data = file.read().await;
+                            events.push(Event::BootromUpload(GameboyType::CGB, data))
+                        }
+                    };
+                    wasm_bindgen_futures::spawn_local(future);
+                }
+            });
 
         });
 
@@ -487,7 +492,7 @@ fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Volume {
-    pub master: u8,
+    pub master: u32,
     pub square_1: u32,
     pub square_2: u32,
     pub wave: u32,

@@ -149,6 +149,7 @@ impl Saves {
     }
 
     pub fn show_save_manager(&mut self, ui: &mut egui::Ui) {
+        let excluded: [String; 4] = ["app".into(), "egui_memory_ron".into(), crate::app::DMG_ROM_NAME.into(), crate::app::CGB_ROM_NAME.into()];
         if self.save_data.is_empty() {
             for i in 0..=self.storage.length().unwrap_or(0) {
                 let Ok(Some(key)) = self.storage.key(i) else {
@@ -156,7 +157,7 @@ impl Saves {
                     continue
                 };
                 if let Ok(Some(item)) = self.storage.get(&key) {
-                    if &key != "app" && &key != "egui_memory_ron"  { // Ignore egui entries
+                    if !excluded.contains(&key)  { // Ignore egui/app entries
                         self.save_data.insert(key.clone(), (key, item));
                     }
                 };
@@ -177,7 +178,6 @@ impl Saves {
                     };
                 });
 
-                // ui.set_min_width(0.0);
                 if ui.button("⬇").clicked() {
                     let _ = Saves::download_helper(&format!("{key_field}.sav"), &item);
                     ui.close_menu();
@@ -187,7 +187,6 @@ impl Saves {
                     let _ = self.storage.delete(key);
                     modified = true;
                 };
-                // ui.add_enabled_ui(false, |ui| ui.text_edit_multiline(item));
                 ui.end_row();
             }
             if modified {
