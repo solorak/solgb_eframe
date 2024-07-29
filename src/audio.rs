@@ -1,4 +1,3 @@
-
 use std::sync::{atomic::AtomicU8, Arc};
 
 use cpal::{
@@ -23,7 +22,11 @@ impl Audio {
 
         let volume = Arc::new(AtomicU8::new(0));
 
-        Self { device, config, volume }
+        Self {
+            device,
+            config,
+            volume,
+        }
     }
 
     pub fn get_stream(&self, sample_rec: AudioControl) -> Stream {
@@ -46,7 +49,8 @@ impl Audio {
         if volume > 100 {
             volume = 100;
         }
-        self.volume.store(volume, std::sync::atomic::Ordering::Relaxed)
+        self.volume
+            .store(volume, std::sync::atomic::Ordering::Relaxed)
     }
 
     fn setup<T>(&self, mut sample_rec: AudioControl, volume: Arc<AtomicU8>) -> Stream
@@ -68,16 +72,19 @@ impl Audio {
                                 last = match buffer.next() {
                                     Some(val) => val,
                                     None => {
-                                        loop { //This jank is because we cant block
+                                        loop {
+                                            //This jank is because we cant block
                                             if let Ok(samples) = sample_rec.try_get_audio_buffer() {
                                                 buffer = samples.into_iter();
-                                                break
+                                                break;
                                             }
                                         }
                                         buffer.next().unwrap_or(last)
                                     }
                                 };
-                                let volume = (volume.load(std::sync::atomic::Ordering::Relaxed) as f32) / 100.0;
+                                let volume = (volume.load(std::sync::atomic::Ordering::Relaxed)
+                                    as f32)
+                                    / 100.0;
                                 *value = T::from_sample(last * volume);
                             }
                         }

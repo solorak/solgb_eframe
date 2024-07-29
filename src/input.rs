@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use egui::{Context, Key};
 use gilrs::{Button, GamepadId};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub struct Inputs {
     pub up: InputType,
@@ -112,7 +112,7 @@ impl Inputs {
             a: self.a.clone(),
             b: self.b.clone(),
             select: self.select.clone(),
-            start: self.start.clone()
+            start: self.start.clone(),
         }
     }
 
@@ -142,7 +142,7 @@ pub struct InputsState {
 
 impl Default for InputsState {
     fn default() -> Self {
-        Self { 
+        Self {
             up: InputType::Keyboard(Key::ArrowUp),
             down: InputType::Keyboard(Key::ArrowDown),
             left: InputType::Keyboard(Key::ArrowLeft),
@@ -174,7 +174,7 @@ impl InputType {
             }
             InputType::Keyboard(key) => {
                 let mut pressed = false;
-                egui_ctx.input(|i| { pressed = i.key_down(key) });
+                egui_ctx.input(|i| pressed = i.key_down(key));
                 pressed
             }
             InputType::None => false,

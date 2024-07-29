@@ -1,10 +1,13 @@
-
-use std::{collections::BTreeMap, io::{self, Write}, sync::{Arc, Mutex}};
-use solgb::cart::RomInfo;
-use web_sys::Storage;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use web_time::{Duration, Instant};
+use solgb::cart::RomInfo;
+use std::{
+    collections::BTreeMap,
+    io::{self, Write},
+    sync::{Arc, Mutex},
+};
 use wasm_bindgen::JsCast;
+use web_sys::Storage;
+use web_time::{Duration, Instant};
 use zip::write::SimpleFileOptions;
 
 use crate::app::{Event, Events};
@@ -21,7 +24,7 @@ pub struct Saves {
 impl Saves {
     pub fn new(events: Events) -> Option<Self> {
         let Some(Some(storage)) = web_sys::window().and_then(|s| s.local_storage().ok()) else {
-            return None
+            return None;
         };
         Some(Self {
             storage,
@@ -42,7 +45,7 @@ impl Saves {
         if self.last_save.elapsed() > Duration::from_secs(SAVE_INTERVAL) {
             if let Some(rom_info) = &self.rom_info {
                 if !rom_info.is_battery_backed() {
-                    return
+                    return;
                 }
             }
 
@@ -62,7 +65,11 @@ impl Saves {
     pub fn download(&mut self, name: &str) -> Result<(), String> {
         let item = match self.storage.get(name) {
             Ok(Some(item)) => item,
-            _ => return Err(format!("Unable to retrive item or item with name: {name} does not exist")),
+            _ => {
+                return Err(format!(
+                    "Unable to retrive item or item with name: {name} does not exist"
+                ))
+            }
         };
 
         Saves::download_helper(&format!("{name}.sav"), &item)?;
@@ -81,14 +88,15 @@ impl Saves {
         for i in 0..=self.storage.length().unwrap_or(0) {
             let Ok(Some(key)) = self.storage.key(i) else {
                 log::error!("Unable to get key at storage index: {i}");
-                continue
+                continue;
             };
 
             if let Ok(Some(item)) = self.storage.get(&key) {
                 let item = item.replace("\"", "");
                 match &STANDARD.decode(item) {
                     Ok(decoded) => {
-                        zip.start_file(format!("{key}.sav").into_boxed_str(), options).unwrap_or(());
+                        zip.start_file(format!("{key}.sav").into_boxed_str(), options)
+                            .unwrap_or(());
                         zip.write_all(decoded).unwrap_or_default();
                     }
                     Err(err) => log::error!("{err}"),
@@ -117,8 +125,13 @@ impl Saves {
         let doc = win.document().ok_or("unknown error".to_string())?;
 
         let link = doc.create_element("a").unwrap();
-        link.set_attribute("href", &format!("data:application/octet-stream;base64,{base64_data}")).map_err(|e| e.as_string().unwrap_or("unknown error".to_string()))?;
-        link.set_attribute("download", name).map_err(|e| e.as_string().unwrap_or("unknown error".to_string()))?;
+        link.set_attribute(
+            "href",
+            &format!("data:application/octet-stream;base64,{base64_data}"),
+        )
+        .map_err(|e| e.as_string().unwrap_or("unknown error".to_string()))?;
+        link.set_attribute("download", name)
+            .map_err(|e| e.as_string().unwrap_or("unknown error".to_string()))?;
 
         let link = web_sys::HtmlAnchorElement::unchecked_from_js(link.into()); // Figure out a better way to do this
         link.click();
@@ -138,7 +151,7 @@ impl Saves {
         let events = self.events.clone();
 
         let future = async move {
-            let file = task.await;    
+            let file = task.await;
             if let Some(file) = file {
                 let data = file.read().await;
                 events.push(Event::SaveUpload(file.file_name(), data))
@@ -148,48 +161,56 @@ impl Saves {
     }
 
     pub fn show_save_manager(&mut self, ui: &mut egui::Ui) {
-        let excluded: [String; 4] = ["app".into(), "egui_memory_ron".into(), crate::app::DMG_ROM_NAME.into(), crate::app::CGB_ROM_NAME.into()];
+        let excluded: [String; 4] = [
+            "app".into(),
+            "egui_memory_ron".into(),
+            crate::app::DMG_ROM_NAME.into(),
+            crate::app::CGB_ROM_NAME.into(),
+        ];
         if self.save_data.is_empty() {
             for i in 0..=self.storage.length().unwrap_or(0) {
                 let Ok(Some(key)) = self.storage.key(i) else {
                     log::error!("Unable to get key at storage index: {i}");
-                    continue
+                    continue;
                 };
                 if let Ok(Some(item)) = self.storage.get(&key) {
-                    if !excluded.contains(&key)  { // Ignore egui/app entries
+                    if !excluded.contains(&key) {
+                        // Ignore egui/app entries
                         self.save_data.insert(key.clone(), (key, item));
                     }
                 };
             }
         }
 
-        egui::Grid::new("save_manager").min_col_width(0.0).show(ui, |ui| {
-            let mut modified: bool = false;
-            for (key, (key_field, item)) in &mut self.save_data {
-                ui.horizontal(|ui| {
-                    ui.set_width(200.0);
-                    if ui.text_edit_singleline(key_field).lost_focus() && key != key_field {
-                        let _ = self.storage.set(key_field, item);
+        egui::Grid::new("save_manager")
+            .min_col_width(0.0)
+            .show(ui, |ui| {
+                let mut modified: bool = false;
+                for (key, (key_field, item)) in &mut self.save_data {
+                    ui.horizontal(|ui| {
+                        ui.set_width(200.0);
+                        if ui.text_edit_singleline(key_field).lost_focus() && key != key_field {
+                            let _ = self.storage.set(key_field, item);
+                            let _ = self.storage.delete(key);
+                            modified = true;
+                        };
+                    });
+
+                    if ui.button("⬇").clicked() {
+                        let _ = Saves::download_helper(&format!("{key_field}.sav"), item);
+                        ui.close_menu();
+                    }
+
+                    if ui.button("X").clicked() {
                         let _ = self.storage.delete(key);
                         modified = true;
                     };
-                });
-
-                if ui.button("⬇").clicked() {
-                    let _ = Saves::download_helper(&format!("{key_field}.sav"), item);
-                    ui.close_menu();
+                    ui.end_row();
                 }
-
-                if ui.button("X").clicked() {
-                    let _ = self.storage.delete(key);
-                    modified = true;
-                };
-                ui.end_row();
-            }
-            if modified {
-                self.save_data.clear();
-            }
-        });
+                if modified {
+                    self.save_data.clear();
+                }
+            });
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
             if ui.button("Upload").clicked() {
