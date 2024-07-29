@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use cpal::traits::StreamTrait;
 use cpal::Stream;
 use egui::load::SizedTexture;
-use egui::{Color32, ColorImage, ImageData, ImageSource, Key, TextureHandle, TextureOptions};
-use gilrs::{Button, Gilrs};
+use egui::{Color32, ColorImage, ImageData, ImageSource, TextureHandle, TextureOptions};
+use gilrs::Gilrs;
 use serde::{Deserialize, Serialize};
 use solgb::cart::CartType;
 use solgb::gameboy::{self, GameboyType};
@@ -20,6 +20,7 @@ use web_time::Instant;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 use crate::audio::Audio;
+use crate::input::{Inputs, InputsState};
 use crate::saves::Saves;
 
 pub const WIDTH: usize = gameboy::SCREEN_WIDTH as usize;
@@ -40,8 +41,8 @@ pub struct TemplateApp {
     audio: Audio,
     #[serde(skip)]
     stream: Option<Stream>,
-    #[serde(skip)]
-    gilrs: Gilrs,
+    // #[serde(skip)]
+    // gilrs: Gilrs,
     #[serde(skip)]
     last_save: Instant,
     #[serde(skip)]
@@ -53,6 +54,10 @@ pub struct TemplateApp {
     save_manager_open: bool,
     volume: Volume,
     boot_rom_options: BootRomOptions,
+    #[serde(skip)]
+    inputs: Option<Inputs>,
+    inputs_window_open: bool,
+    input_state: InputsState,
 }
 
 impl Default for TemplateApp {
@@ -63,7 +68,7 @@ impl Default for TemplateApp {
             gb_texture: None,
             audio: Audio::new(),
             stream: None,
-            gilrs: Gilrs::new().unwrap(),
+            // gilrs: Gilrs::new().unwrap(),
             last_save: Instant::now(),
             saves: Saves::new(events.clone()),
             started: false,
@@ -71,6 +76,9 @@ impl Default for TemplateApp {
             save_manager_open: true,
             volume: Volume::default(),
             boot_rom_options: BootRomOptions::new(),
+            inputs: None,
+            inputs_window_open: false,
+            input_state: InputsState::default(),
         }
     }
 }
@@ -272,35 +280,9 @@ impl eframe::App for TemplateApp {
             }
             
             //Update inputs
-            let mut inputs = [false; 8];
-
-            ctx.input(|i| {
-                inputs = [
-                    i.key_down(Key::Z),
-                    i.key_down(Key::X),
-                    i.key_down(Key::W),
-                    i.key_down(Key::Enter),
-                    i.key_down(Key::ArrowRight),
-                    i.key_down(Key::ArrowLeft),
-                    i.key_down(Key::ArrowUp),
-                    i.key_down(Key::ArrowDown),
-                ];
-            });
-
-            while let Some(_event) = self.gilrs.next_event() {}
-            for (_id, gamepad) in self.gilrs.gamepads() {
-                log::info!("{}", gamepad.name());
-
-                inputs[0] = gamepad.is_pressed(Button::South);
-                inputs[1] = gamepad.is_pressed(Button::West);
-                inputs[2] = gamepad.is_pressed(Button::Select);
-                inputs[3] = gamepad.is_pressed(Button::Start);
-                inputs[4] = gamepad.is_pressed(Button::DPadRight);
-                inputs[5] = gamepad.is_pressed(Button::DPadLeft);
-                inputs[6] = gamepad.is_pressed(Button::DPadUp);
-                inputs[7] = gamepad.is_pressed(Button::DPadDown);
-            }
-
+            let inputs = self.inputs.get_or_insert_with(|| Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone()));
+            while let Some(_event) = inputs.gilrs.next_event() {}
+            let inputs =  inputs.pressed_all();
             gameboy.input_sender.send(inputs).unwrap();
         }
 
@@ -335,6 +317,11 @@ impl eframe::App for TemplateApp {
 
                 if ui.button("bootrom options").clicked() {
                     self.boot_rom_options.window_visible = true;
+                    ui.close_menu();
+                }
+
+                if ui.button("inputs").clicked() {
+                    self.inputs_window_open = true;
                     ui.close_menu();
                 }
             });
@@ -472,7 +459,76 @@ impl eframe::App for TemplateApp {
 
         });
 
+        egui::Window::new("Inputs")
+        .title_bar(true)
+        .resizable(false)
+        .collapsible(false)
+        .open(&mut self.inputs_window_open)
+        .show(ctx, |ui| {
+            let inputs = self.inputs.get_or_insert_with(|| Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone()));
+            ui.horizontal(|ui|{
+                ui.monospace(format!("A:        "));
+                if ui.text_edit_singleline(&mut inputs.a.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::A);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui|{
+                ui.monospace(format!("B:        "));
+                if ui.text_edit_singleline(&mut inputs.b.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::B);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui|{
+                ui.monospace(format!("Select:   "));
+                if ui.text_edit_singleline(&mut inputs.select.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::Select);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui|{
+                ui.monospace(format!("Start:    "));
+                if ui.text_edit_singleline(&mut inputs.start.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::Start);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui|{
+                ui.monospace(format!("Up:       "));
+                if ui.text_edit_singleline(&mut inputs.up.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::Up);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui|{
+                ui.monospace(format!("Down:     "));
+                if ui.text_edit_singleline(&mut inputs.down.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::Down);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui|{
+                ui.monospace(format!("Left:     "));
+                if ui.text_edit_singleline(&mut inputs.left.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::Left);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui|{
+                ui.monospace(format!("Right:    "));
+                if ui.text_edit_singleline(&mut inputs.right.to_string()).has_focus() {
+                    inputs.update_buttons(crate::input::GBButton::Right);
+                    self.input_state = inputs.save();
+                }
+            });
+        });
+
         ctx.request_repaint();
+    }
+    
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(5)
     }
 }
 

@@ -29,7 +29,11 @@ fn main() -> eframe::Result {
 fn main() {
     // Redirect `log` message to `console.log` and friends:
 
-    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+    if cfg!(debug_assertions) {
+        eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+    } else {
+        eframe::WebLogger::init(log::LevelFilter::Warn).ok();
+    }
 
     let web_options = eframe::WebOptions::default();
 

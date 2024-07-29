@@ -1565,6 +1565,7 @@ dependencies = [
  "fnv",
  "gilrs-core",
  "log",
+ "serde",
  "uuid",
  "vec_map",
 ]
@@ -1583,6 +1584,7 @@ dependencies = [
  "libudev-sys",
  "log",
  "nix 0.29.0",
+ "serde",
  "uuid",
  "vec_map",
  "wasm-bindgen",
