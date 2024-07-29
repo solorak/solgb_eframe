@@ -4,7 +4,6 @@ use solgb::cart::RomInfo;
 use web_sys::Storage;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use web_time::{Duration, Instant};
-use web_sys;
 use wasm_bindgen::JsCast;
 use zip::write::SimpleFileOptions;
 
@@ -61,7 +60,7 @@ impl Saves {
     }
 
     pub fn download(&mut self, name: &str) -> Result<(), String> {
-        let item = match self.storage.get(&name) {
+        let item = match self.storage.get(name) {
             Ok(Some(item)) => item,
             _ => return Err(format!("Unable to retrive item or item with name: {name} does not exist")),
         };
@@ -114,12 +113,12 @@ impl Saves {
             return Err(format!("String is not base64: {err}"));
         }
 
-        let win = web_sys::window().ok_or(format!("unknown error"))?;
-        let doc = win.document().ok_or(format!("unknown error"))?;
+        let win = web_sys::window().ok_or("unknown error".to_string())?;
+        let doc = win.document().ok_or("unknown error".to_string())?;
 
         let link = doc.create_element("a").unwrap();
-        link.set_attribute("href", &format!("data:application/octet-stream;base64,{base64_data}")).map_err(|e| e.as_string().unwrap_or(format!("unknown error")))?;
-        link.set_attribute("download", name).map_err(|e| e.as_string().unwrap_or(format!("unknown error")))?;
+        link.set_attribute("href", &format!("data:application/octet-stream;base64,{base64_data}")).map_err(|e| e.as_string().unwrap_or("unknown error".to_string()))?;
+        link.set_attribute("download", name).map_err(|e| e.as_string().unwrap_or("unknown error".to_string()))?;
 
         let link = web_sys::HtmlAnchorElement::unchecked_from_js(link.into()); // Figure out a better way to do this
         link.click();
@@ -169,17 +168,15 @@ impl Saves {
             for (key, (key_field, item)) in &mut self.save_data {
                 ui.horizontal(|ui| {
                     ui.set_width(200.0);
-                    if ui.text_edit_singleline(key_field).lost_focus() {
-                        if key != key_field {
-                            let _ = self.storage.set(key_field, item);
-                            let _ = self.storage.delete(key);
-                            modified = true;
-                        }
+                    if ui.text_edit_singleline(key_field).lost_focus() && key != key_field {
+                        let _ = self.storage.set(key_field, item);
+                        let _ = self.storage.delete(key);
+                        modified = true;
                     };
                 });
 
                 if ui.button("⬇").clicked() {
-                    let _ = Saves::download_helper(&format!("{key_field}.sav"), &item);
+                    let _ = Saves::download_helper(&format!("{key_field}.sav"), item);
                     ui.close_menu();
                 }
 

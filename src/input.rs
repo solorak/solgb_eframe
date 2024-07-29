@@ -192,8 +192,8 @@ impl InputType {
 impl Display for InputType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            InputType::Gamepad((id, button)) => write!(f, "Gamepad: {} - {:#?}", id, button),
-            InputType::Keyboard(key) => write!(f, "Keyboard: {:#?}", key),
+            InputType::Gamepad((id, button)) => write!(f, "Gamepad: {id} - {button:#?}"),
+            InputType::Keyboard(key) => write!(f, "Keyboard: {key:#?}"),
             InputType::None => write!(f, ""),
         }
     }

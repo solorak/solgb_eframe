@@ -26,8 +26,8 @@ use crate::saves::Saves;
 pub const WIDTH: usize = gameboy::SCREEN_WIDTH as usize;
 pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
 
-pub const DMG_ROM_NAME: &'static str = "_DMGBOOTROM";
-pub const CGB_ROM_NAME: &'static str = "_CGBBOOTROM";
+pub const DMG_ROM_NAME: &str = "_DMGBOOTROM";
+pub const CGB_ROM_NAME: &str = "_CGBBOOTROM";
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -143,7 +143,7 @@ impl TemplateApp {
             Some(Event::OpenRom(rom)) => {
 
                 let (name, rom_type) = if let Ok(rom_info) = solgb::cart::RomInfo::new(&rom) {
-                    (rom_info.get_name(), rom_info.get_type().clone())
+                    (rom_info.get_name(), *rom_info.get_type())
                 } else {
                     log::error!("ROM does not appear to be a gameboy game");
                     return
@@ -159,11 +159,11 @@ impl TemplateApp {
 
                     let mut boot_rom = match (&self.boot_rom_options.gb_type, &rom_type) {
                         (None, CartType::GB) | (Some(GameboyType::DMG), CartType::GB) | (Some(GameboyType::DMG), CartType::Hybrid) | (Some(GameboyType::DMG), CartType::CGB) => {
-                            let encoded = saves.storage.get_item(&DMG_ROM_NAME).unwrap_or(None).unwrap_or_default();
+                            let encoded = saves.storage.get_item(DMG_ROM_NAME).unwrap_or(None).unwrap_or_default();
                             STANDARD.decode(encoded).ok()
                         }
                         (None, CartType::CGB) | (None, CartType::Hybrid) | (Some(GameboyType::CGB), CartType::GB) | (Some(GameboyType::CGB), CartType::CGB) | (Some(GameboyType::CGB), CartType::Hybrid) => {
-                            let encoded = saves.storage.get_item(&CGB_ROM_NAME).unwrap_or(None).unwrap_or_default();
+                            let encoded = saves.storage.get_item(CGB_ROM_NAME).unwrap_or(None).unwrap_or_default();
                             STANDARD.decode(encoded).ok()
                         }
                     };
@@ -175,7 +175,7 @@ impl TemplateApp {
 
                     let mut gameboy = match solgb::gameboy::GameboyBuilder::default()
                     .with_rom(&rom)
-                    .with_model(self.boot_rom_options.gb_type.clone())
+                    .with_model(self.boot_rom_options.gb_type)
                     .with_exram(saves.save_ram.clone())
                     .with_boot_rom(boot_rom)
                     .build() {
@@ -341,7 +341,7 @@ impl eframe::App for TemplateApp {
                         }
                     } else {
                         let gameboy = egui::Image::new(ImageSource::Texture(SizedTexture::from_handle(
-                            &gb_texture,
+                            gb_texture,
                         )))
                         .fit_to_fraction([1.0, 1.0].into());
                         ui.add(gameboy);
@@ -467,56 +467,56 @@ impl eframe::App for TemplateApp {
         .show(ctx, |ui| {
             let inputs = self.inputs.get_or_insert_with(|| Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone()));
             ui.horizontal(|ui|{
-                ui.monospace(format!("A:        "));
+                ui.monospace("A:        ".to_string());
                 if ui.text_edit_singleline(&mut inputs.a.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::A);
                     self.input_state = inputs.save();
                 }
             });
             ui.horizontal(|ui|{
-                ui.monospace(format!("B:        "));
+                ui.monospace("B:        ".to_string());
                 if ui.text_edit_singleline(&mut inputs.b.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::B);
                     self.input_state = inputs.save();
                 }
             });
             ui.horizontal(|ui|{
-                ui.monospace(format!("Select:   "));
+                ui.monospace("Select:   ".to_string());
                 if ui.text_edit_singleline(&mut inputs.select.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::Select);
                     self.input_state = inputs.save();
                 }
             });
             ui.horizontal(|ui|{
-                ui.monospace(format!("Start:    "));
+                ui.monospace("Start:    ".to_string());
                 if ui.text_edit_singleline(&mut inputs.start.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::Start);
                     self.input_state = inputs.save();
                 }
             });
             ui.horizontal(|ui|{
-                ui.monospace(format!("Up:       "));
+                ui.monospace("Up:       ".to_string());
                 if ui.text_edit_singleline(&mut inputs.up.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::Up);
                     self.input_state = inputs.save();
                 }
             });
             ui.horizontal(|ui|{
-                ui.monospace(format!("Down:     "));
+                ui.monospace("Down:     ".to_string());
                 if ui.text_edit_singleline(&mut inputs.down.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::Down);
                     self.input_state = inputs.save();
                 }
             });
             ui.horizontal(|ui|{
-                ui.monospace(format!("Left:     "));
+                ui.monospace("Left:     ".to_string());
                 if ui.text_edit_singleline(&mut inputs.left.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::Left);
                     self.input_state = inputs.save();
                 }
             });
             ui.horizontal(|ui|{
-                ui.monospace(format!("Right:    "));
+                ui.monospace("Right:    ".to_string());
                 if ui.text_edit_singleline(&mut inputs.right.to_string()).has_focus() {
                     inputs.update_buttons(crate::input::GBButton::Right);
                     self.input_state = inputs.save();
