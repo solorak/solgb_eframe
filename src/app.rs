@@ -118,10 +118,14 @@ impl TemplateApp {
 
     #[cfg(target_arch = "wasm32")]
     fn load(&mut self) {
-        open(&self.events, &[
-            (("Gameboy Rom"), &["gb", "gbc"]),
-            (("Gameboy Color Rom", &["gb", "gbc"])),
-        ], EventType::OpenRom);
+        open(
+            &self.events,
+            &[
+                (("Gameboy Rom"), &["gb", "gbc"]),
+                ("Gameboy Color Rom", &["gb", "gbc"]),
+            ],
+            EventType::OpenRom,
+        );
     }
 
     fn setup(&mut self) {
@@ -462,17 +466,22 @@ impl eframe::App for TemplateApp {
 
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                     if ui.button("upload DMG").clicked() {
-                        open(&self.events, &[
-                            ("Gameboy bootroom", &["bin", "rom"]),
-                            ("All Files", &["*"]),
-                        ], EventType::BootromUpload(GameboyType::DMG));
+                        open(
+                            &self.events,
+                            &[("Gameboy bootroom", &["bin", "rom"]), ("All Files", &["*"])],
+                            EventType::BootromUpload(GameboyType::DMG),
+                        );
                     }
 
                     if ui.button("upload CGB").clicked() {
-                        open(&self.events, &[
-                            ("Gameboy Color bootroom", &["bin", "rom"]),
-                            ("All Files", &["*"]),
-                        ], EventType::BootromUpload(GameboyType::CGB));
+                        open(
+                            &self.events,
+                            &[
+                                ("Gameboy Color bootroom", &["bin", "rom"]),
+                                ("All Files", &["*"]),
+                            ],
+                            EventType::BootromUpload(GameboyType::CGB),
+                        );
                     }
                 });
             });
@@ -664,14 +673,14 @@ pub(crate) enum EventType {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn open (events: &Events, filter: &[(&str, &[&str])], event_type: EventType) {
+pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: EventType) {
     use rfd::AsyncFileDialog;
 
     hide_canvas();
 
     let mut file_dialog = AsyncFileDialog::new();
     for (name, extensions) in filter {
-        file_dialog = file_dialog.add_filter(*name, *extensions);
+        file_dialog = file_dialog.add_filter(*name, extensions);
     }
     file_dialog = file_dialog.set_directory("/");
     let task = file_dialog.pick_file();
@@ -683,9 +692,11 @@ pub(crate) fn open (events: &Events, filter: &[(&str, &[&str])], event_type: Eve
         if let Some(file) = file {
             let data = file.read().await;
             match event_type {
-                EventType::OpenRom =>  events.push(Event::OpenRom(data)),
+                EventType::OpenRom => events.push(Event::OpenRom(data)),
                 EventType::SaveUpload => events.push(Event::SaveUpload(file.file_name(), data)),
-                EventType::BootromUpload(gb_type) => events.push(Event::BootromUpload(gb_type, data)),
+                EventType::BootromUpload(gb_type) => {
+                    events.push(Event::BootromUpload(gb_type, data))
+                }
             }
         }
         show_canvas()
@@ -699,16 +710,18 @@ fn hide_canvas() {
     let canvas = web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.get_element_by_id("the_canvas_id"));
-        if let Some(canvas) = canvas {
-            canvas.set_attribute("style", "outline: none; display: none;").unwrap();
-        }
+    if let Some(canvas) = canvas {
+        canvas
+            .set_attribute("style", "outline: none; display: none;")
+            .unwrap();
+    }
 }
 
 fn show_canvas() {
     let canvas = web_sys::window()
         .and_then(|w| w.document())
         .and_then(|d| d.get_element_by_id("the_canvas_id"));
-        if let Some(canvas) = canvas {
-            canvas.set_attribute("style", "outline: none;").unwrap();
-        }
+    if let Some(canvas) = canvas {
+        canvas.set_attribute("style", "outline: none;").unwrap();
+    }
 }

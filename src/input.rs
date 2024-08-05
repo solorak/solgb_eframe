@@ -165,12 +165,10 @@ pub enum InputType {
 impl InputType {
     fn pressed(&mut self, gilrs: &gilrs::Gilrs, egui_ctx: &Context) -> bool {
         match *self {
-            InputType::Gamepad((id, button)) => {
-                match &mut gilrs.connected_gamepad(id) {
-                    Some(gamepad) => gamepad.is_pressed(button),
-                    None => false,
-                }
-            }
+            InputType::Gamepad((id, button)) => match &mut gilrs.connected_gamepad(id) {
+                Some(gamepad) => gamepad.is_pressed(button),
+                None => false,
+            },
             InputType::Keyboard(key) => {
                 let mut pressed = false;
                 egui_ctx.input(|i| pressed = i.key_down(key));

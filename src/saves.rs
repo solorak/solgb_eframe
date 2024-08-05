@@ -140,10 +140,11 @@ impl Saves {
     }
 
     pub fn upload(&mut self) {
-        crate::app::open(&self.events, &[
-            ("Gameboy Save Ram File", &["sav"]),
-            ("All Files", &["*"]),
-        ], crate::app::EventType::SaveUpload);
+        crate::app::open(
+            &self.events,
+            &[("Gameboy Save Ram File", &["sav"]), ("All Files", &["*"])],
+            crate::app::EventType::SaveUpload,
+        );
     }
 
     pub fn show_save_manager(&mut self, ui: &mut egui::Ui) {
