@@ -10,7 +10,7 @@ use web_sys::Storage;
 use web_time::{Duration, Instant};
 use zip::write::SimpleFileOptions;
 
-use crate::app::{Event, Events};
+use crate::app::Events;
 
 pub struct Saves {
     pub storage: Storage,
@@ -140,24 +140,10 @@ impl Saves {
     }
 
     pub fn upload(&mut self) {
-        use rfd::AsyncFileDialog;
-
-        let task = AsyncFileDialog::new()
-            .add_filter("Gameboy Save Ram File", &["sav"])
-            .add_filter("All Files", &["*"])
-            .set_directory("/")
-            .pick_file();
-
-        let events = self.events.clone();
-
-        let future = async move {
-            let file = task.await;
-            if let Some(file) = file {
-                let data = file.read().await;
-                events.push(Event::SaveUpload(file.file_name(), data))
-            }
-        };
-        wasm_bindgen_futures::spawn_local(future);
+        crate::app::open(&self.events, &[
+            ("Gameboy Save Ram File", &["sav"]),
+            ("All Files", &["*"]),
+        ], crate::app::EventType::SaveUpload);
     }
 
     pub fn show_save_manager(&mut self, ui: &mut egui::Ui) {

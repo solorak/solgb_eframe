@@ -166,10 +166,9 @@ impl InputType {
     fn pressed(&mut self, gilrs: &gilrs::Gilrs, egui_ctx: &Context) -> bool {
         match *self {
             InputType::Gamepad((id, button)) => {
-                if let Some(gamepad) = &mut gilrs.connected_gamepad(id) {
-                    gamepad.is_pressed(button)
-                } else {
-                    false
+                match &mut gilrs.connected_gamepad(id) {
+                    Some(gamepad) => gamepad.is_pressed(button),
+                    None => false,
                 }
             }
             InputType::Keyboard(key) => {

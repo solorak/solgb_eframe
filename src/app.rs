@@ -118,24 +118,10 @@ impl TemplateApp {
 
     #[cfg(target_arch = "wasm32")]
     fn load(&mut self) {
-        use rfd::AsyncFileDialog;
-
-        let task = AsyncFileDialog::new()
-            .add_filter("Gameboy Rom", &["gb", "gbc"])
-            .add_filter("Gameboy Color Rom", &["gb", "gbc"])
-            .set_directory("/")
-            .pick_file();
-
-        let events = self.events.clone();
-
-        let future = async move {
-            let file = task.await;
-            if let Some(file) = file {
-                let data = file.read().await;
-                events.push(Event::OpenRom(data));
-            }
-        };
-        wasm_bindgen_futures::spawn_local(future);
+        open(&self.events, &[
+            (("Gameboy Rom"), &["gb", "gbc"]),
+            (("Gameboy Color Rom", &["gb", "gbc"])),
+        ], EventType::OpenRom);
     }
 
     fn setup(&mut self) {
@@ -233,7 +219,7 @@ impl TemplateApp {
                     self.gameboy = Some(gameboy);
                     self.stream = Some(stream);
 
-                    self.started = false;
+                    self.started = true;
                 }
             }
             Some(Event::SaveUpload(name, data)) => {
@@ -326,7 +312,7 @@ impl eframe::App for TemplateApp {
                     ui.add_space(16.0);
                 }
 
-                egui::widgets::global_dark_light_mode_buttons(ui);
+                // egui::widgets::global_dark_light_mode_buttons(ui);
 
                 if ui.button("open").clicked() {
                     self.load();
@@ -356,7 +342,7 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(gb_texture) = &self.gb_texture {
-                ui.centered_and_justified(|ui| {
+                ui.vertical_centered_justified(|ui| {
                     if !self.started {
                         if ui.button("start").clicked() {
                             if let Some(stream) = &self.stream {
@@ -476,45 +462,17 @@ impl eframe::App for TemplateApp {
 
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
                     if ui.button("upload DMG").clicked() {
-                        use rfd::AsyncFileDialog;
-
-                        let task = AsyncFileDialog::new()
-                            .add_filter("Gameboy bootroom", &["bin", "rom"])
-                            .add_filter("All Files", &["*"])
-                            .set_directory("/")
-                            .pick_file();
-
-                        let events = self.events.clone();
-
-                        let future = async move {
-                            let file = task.await;
-                            if let Some(file) = file {
-                                let data = file.read().await;
-                                events.push(Event::BootromUpload(GameboyType::DMG, data))
-                            }
-                        };
-                        wasm_bindgen_futures::spawn_local(future);
+                        open(&self.events, &[
+                            ("Gameboy bootroom", &["bin", "rom"]),
+                            ("All Files", &["*"]),
+                        ], EventType::BootromUpload(GameboyType::DMG));
                     }
 
                     if ui.button("upload CGB").clicked() {
-                        use rfd::AsyncFileDialog;
-
-                        let task = AsyncFileDialog::new()
-                            .add_filter("Gameboy Color bootroom", &["bin", "rom"])
-                            .add_filter("All Files", &["*"])
-                            .set_directory("/")
-                            .pick_file();
-
-                        let events = self.events.clone();
-
-                        let future = async move {
-                            let file = task.await;
-                            if let Some(file) = file {
-                                let data = file.read().await;
-                                events.push(Event::BootromUpload(GameboyType::CGB, data))
-                            }
-                        };
-                        wasm_bindgen_futures::spawn_local(future);
+                        open(&self.events, &[
+                            ("Gameboy Color bootroom", &["bin", "rom"]),
+                            ("All Files", &["*"]),
+                        ], EventType::BootromUpload(GameboyType::CGB));
                     }
                 });
             });
@@ -696,4 +654,61 @@ pub enum Event {
     OpenRom(Vec<u8>),
     SaveUpload(String, Vec<u8>),
     BootromUpload(GameboyType, Vec<u8>),
+}
+
+#[derive(Copy, Clone)]
+pub(crate) enum EventType {
+    OpenRom,
+    SaveUpload,
+    BootromUpload(GameboyType),
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn open (events: &Events, filter: &[(&str, &[&str])], event_type: EventType) {
+    use rfd::AsyncFileDialog;
+
+    hide_canvas();
+
+    let mut file_dialog = AsyncFileDialog::new();
+    for (name, extensions) in filter {
+        file_dialog = file_dialog.add_filter(*name, *extensions);
+    }
+    file_dialog = file_dialog.set_directory("/");
+    let task = file_dialog.pick_file();
+
+    let events = events.clone();
+
+    let future = async move {
+        let file = task.await;
+        if let Some(file) = file {
+            let data = file.read().await;
+            match event_type {
+                EventType::OpenRom =>  events.push(Event::OpenRom(data)),
+                EventType::SaveUpload => events.push(Event::SaveUpload(file.file_name(), data)),
+                EventType::BootromUpload(gb_type) => events.push(Event::BootromUpload(gb_type, data)),
+            }
+        }
+        show_canvas()
+    };
+
+    wasm_bindgen_futures::spawn_local(future);
+}
+
+//We have to hide the canvas while opening files because in some browsers the buttons don't work
+fn hide_canvas() {
+    let canvas = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("the_canvas_id"));
+        if let Some(canvas) = canvas {
+            canvas.set_attribute("style", "outline: none; display: none;").unwrap();
+        }
+}
+
+fn show_canvas() {
+    let canvas = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("the_canvas_id"));
+        if let Some(canvas) = canvas {
+            canvas.set_attribute("style", "outline: none;").unwrap();
+        }
 }
