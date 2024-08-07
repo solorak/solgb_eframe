@@ -223,7 +223,7 @@ impl TemplateApp {
                     self.gameboy = Some(gameboy);
                     self.stream = Some(stream);
 
-                    self.started = true;
+                    self.started = false;
                 }
             }
             Some(Event::SaveUpload(name, data)) => {
@@ -261,6 +261,10 @@ impl eframe::App for TemplateApp {
         }
 
         if let Some(gameboy) = &mut self.gameboy {
+            if gameboy.video_rec.len() > 60 {
+                log::warn!("We are over 1 second behind on rendering frames (was the window inactive?)\nskipping to current frame");
+                while let Ok(_) = gameboy.video_rec.try_recv() {}
+            }
             if let Ok(buffer_u32) = gameboy.video_rec.try_recv() {
                 if let Ok(buffer) = bytemuck::try_cast_slice(&buffer_u32) {
                     let image = Arc::new(ColorImage {
@@ -346,7 +350,7 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(gb_texture) = &self.gb_texture {
-                ui.vertical_centered_justified(|ui| {
+                ui.centered_and_justified(|ui| {
                     if !self.started {
                         if ui.button("start").clicked() {
                             if let Some(stream) = &self.stream {
