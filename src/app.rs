@@ -2,7 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cpal::traits::StreamTrait;
 use cpal::Stream;
 use egui::load::SizedTexture;
-use egui::{Color32, ColorImage, ImageData, ImageSource, TextureHandle, TextureOptions};
+use egui::{Color32, ColorImage, ImageData, ImageSource, RichText, TextureHandle, TextureOptions};
 use gilrs::Gilrs;
 use serde::{Deserialize, Serialize};
 use solgb::cart::CartType;
@@ -40,8 +40,6 @@ pub struct TemplateApp {
     audio: Audio,
     #[serde(skip)]
     stream: Option<Stream>,
-    // #[serde(skip)]
-    // gilrs: Gilrs,
     #[serde(skip)]
     last_save: Instant,
     #[serde(skip)]
@@ -57,6 +55,7 @@ pub struct TemplateApp {
     inputs: Option<Inputs>,
     inputs_window_open: bool,
     input_state: InputsState,
+    show_menu: bool,
 }
 
 impl Default for TemplateApp {
@@ -67,17 +66,17 @@ impl Default for TemplateApp {
             gb_texture: None,
             audio: Audio::new(),
             stream: None,
-            // gilrs: Gilrs::new().unwrap(),
             last_save: Instant::now(),
             saves: Saves::new(events.clone()),
             started: false,
             events,
-            save_manager_open: true,
+            save_manager_open: false,
             volume: Volume::default(),
             boot_rom_options: BootRomOptions::new(),
             inputs: None,
             inputs_window_open: false,
             input_state: InputsState::default(),
+            show_menu: true,
         }
     }
 }
@@ -93,6 +92,12 @@ impl TemplateApp {
         if let Some(storage) = cc.storage {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
+
+        let mut style = (*cc.egui_ctx.style()).clone();
+        for (_text_style, font_id) in style.text_styles.iter_mut() {
+            font_id.size = 48.0 // whatever size you want here
+        }
+        cc.egui_ctx.set_style(style);
 
         Self::default()
     }
@@ -242,6 +247,187 @@ impl TemplateApp {
             _ => (),
         }
     }
+
+    fn display_inputs(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
+        {
+            let inputs = self.inputs.get_or_insert_with(|| {
+                Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone())
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("A:        ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.a.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::A);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("B:        ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.b.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::B);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("Select:   ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.select.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::Select);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("Start:    ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.start.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::Start);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("Up:       ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.up.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::Up);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("Down:     ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.down.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::Down);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("Left:     ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.left.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::Left);
+                    self.input_state = inputs.save();
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.monospace("Right:    ".to_string());
+                if ui
+                    .text_edit_singleline(&mut inputs.right.to_string())
+                    .has_focus()
+                {
+                    inputs.update_buttons(crate::input::GBButton::Right);
+                    self.input_state = inputs.save();
+                }
+            });
+        }
+    }
+
+    pub fn display_boot_roms(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut self.boot_rom_options.use_bootrom, "Use Bootrom");
+
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            ui.radio_value(&mut self.boot_rom_options.gb_type, None, "Auto");
+            ui.radio_value(
+                &mut self.boot_rom_options.gb_type,
+                Some(GameboyType::DMG),
+                "DMG",
+            );
+            ui.radio_value(
+                &mut self.boot_rom_options.gb_type,
+                Some(GameboyType::CGB),
+                "CGB",
+            );
+        });
+
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            if ui.button("upload DMG").clicked() {
+                open(
+                    &self.events,
+                    &[("Gameboy bootroom", &["bin", "rom"]), ("All Files", &["*"])],
+                    EventType::BootromUpload(GameboyType::DMG),
+                );
+            }
+
+            if ui.button("upload CGB").clicked() {
+                open(
+                    &self.events,
+                    &[
+                        ("Gameboy Color bootroom", &["bin", "rom"]),
+                        ("All Files", &["*"]),
+                    ],
+                    EventType::BootromUpload(GameboyType::CGB),
+                );
+            }
+        });
+    }
+
+    fn display_volume(&mut self, ui: &mut egui::Ui) {
+        const VOLUME_RANGE: RangeInclusive<u32> = 0..=100;
+        if ui
+            .add(egui::Slider::new(&mut self.volume.master, VOLUME_RANGE).text("Master"))
+            .changed()
+        {
+            self.audio.set_volume(self.volume.master as u8);
+        };
+        if ui
+            .add(
+                egui::Slider::new(&mut self.volume.square_1, VOLUME_RANGE).text("Square 1"),
+            )
+            .changed()
+        {
+            if let Some(gameboy) = &self.gameboy {
+                gameboy
+                    .audio_control
+                    .set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32)
+            }
+        };
+        if ui
+            .add(
+                egui::Slider::new(&mut self.volume.square_2, VOLUME_RANGE).text("Square 2"),
+            )
+            .changed()
+        {
+            if let Some(gameboy) = &self.gameboy {
+                gameboy
+                    .audio_control
+                    .set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32)
+            }
+        };
+        if ui
+            .add(egui::Slider::new(&mut self.volume.wave, VOLUME_RANGE).text("Wave"))
+            .changed()
+        {
+            if let Some(gameboy) = &self.gameboy {
+                gameboy
+                    .audio_control
+                    .set_volume(gameboy::Channel::Wave, self.volume.wave as f32)
+            }
+        };
+        if ui
+            .add(egui::Slider::new(&mut self.volume.noise, VOLUME_RANGE).text("Noise"))
+            .changed()
+        {
+            if let Some(gameboy) = &self.gameboy {
+                gameboy
+                    .audio_control
+                    .set_volume(gameboy::Channel::Noise, self.volume.noise as f32)
+            }
+        };
+    }
 }
 
 impl eframe::App for TemplateApp {
@@ -307,8 +493,21 @@ impl eframe::App for TemplateApp {
             gameboy.input_sender.send(inputs).unwrap();
         }
 
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+        if self.show_menu {
+            egui::Window::new("control panel")
+            .fixed_pos([0.0, 0.0])
+            .min_height(ctx.screen_rect().size().y)
+            .min_width(400.0)
+            .constrain(true)
+            .title_bar(false)
+            .resizable(true)
+            .vscroll(true)
+            .show(ctx, |ui| {
+                const SPACE_BEFORE: f32 = 2.0;
+                const SPACE_AFTER: f32 = 10.0;
+                // ui.set_max_width(285.0);
+                ui.set_min_height(ctx.screen_rect().size().y);
+
                 // NOTE: no File->Quit on web pages!
                 let is_web = cfg!(target_arch = "wasm32");
                 if !is_web {
@@ -320,33 +519,76 @@ impl eframe::App for TemplateApp {
                     ui.add_space(16.0);
                 }
 
-                // egui::widgets::global_dark_light_mode_buttons(ui);
+                if ui.button(RichText::new("≡").monospace()).clicked() {
+                    self.show_menu = !self.show_menu;
+                }
 
-                if ui.button("open").clicked() {
+                egui::widgets::global_dark_light_mode_buttons(ui);
+
+                let mut style = (*ctx.style()).clone();
+                for (_text_style, font_id) in style.text_styles.iter_mut() {
+                    font_id.size = 18.0 // whatever size you want here
+                }
+                ctx.set_style(style);
+
+                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("open")).clicked() {
                     self.load();
                 }
 
-                if ui.button("save manager").clicked() {
-                    self.save_manager_open = true;
-                    ui.close_menu();
+                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("bootroms")).clicked() {
+                    self.boot_rom_options.window_visible = !self.boot_rom_options.window_visible;
                 }
 
-                if ui.button("volume control").clicked() {
-                    self.volume.window_visible = true;
-                    ui.close_menu();
+                if self.boot_rom_options.window_visible {
+                    ui.add_space(SPACE_BEFORE);
+                    self.display_boot_roms(ui);
+                    ui.add_space(SPACE_AFTER);
                 }
 
-                if ui.button("bootrom options").clicked() {
-                    self.boot_rom_options.window_visible = true;
-                    ui.close_menu();
+                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("saves")).clicked() {
+                    self.save_manager_open = ! self.save_manager_open;
                 }
 
-                if ui.button("inputs").clicked() {
-                    self.inputs_window_open = true;
-                    ui.close_menu();
+                if self.save_manager_open {
+                    ui.add_space(SPACE_BEFORE);
+                    if let Some(saves) = &mut self.saves {
+                        saves.show_save_manager(ui);
+                    }
+                    ui.add_space(SPACE_AFTER);
+                }
+
+                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("volume")).clicked() {
+                    self.volume.window_visible = !self.volume.window_visible;
+                }
+
+                if self.volume.window_visible {
+                    ui.add_space(SPACE_BEFORE);
+                    self.display_volume(ui);
+                    ui.add_space(SPACE_AFTER);
+                }
+
+                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("input")).clicked() {
+                    self.inputs_window_open = !self.inputs_window_open;
+                }
+
+                if self.inputs_window_open {
+                    ui.add_space(SPACE_BEFORE);
+                    self.display_inputs(ctx, ui);
+                    ui.add_space(SPACE_AFTER);
                 }
             });
-        });
+        } else {
+            egui::Window::new("control panel")
+            .fixed_pos([0.0, 0.0])
+            .constrain(true)
+            .title_bar(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                if ui.button(RichText::new("≡").monospace()).clicked() {
+                    self.show_menu = !self.show_menu;
+                }
+            });
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(gb_texture) = &self.gb_texture {
@@ -364,6 +606,7 @@ impl eframe::App for TemplateApp {
                         let gameboy = egui::Image::new(ImageSource::Texture(
                             SizedTexture::from_handle(gb_texture),
                         ))
+                        .maintain_aspect_ratio(true)
                         .fit_to_fraction([1.0, 1.0].into());
                         ui.add(gameboy);
                     }
@@ -375,211 +618,6 @@ impl eframe::App for TemplateApp {
                 egui::warn_if_debug_build(ui);
             });
         });
-
-        egui::Window::new("Save Manager")
-            .title_bar(true)
-            .resizable(false)
-            .collapsible(false)
-            .open(&mut self.save_manager_open)
-            .show(ctx, |ui| {
-                if let Some(saves) = &mut self.saves {
-                    saves.show_save_manager(ui);
-                }
-            });
-
-        egui::Window::new("Volume Control")
-            .title_bar(true)
-            .resizable(false)
-            .collapsible(false)
-            .open(&mut self.volume.window_visible)
-            .show(ctx, |ui| {
-                const VOLUME_RANGE: RangeInclusive<u32> = 0..=100;
-                if ui
-                    .add(egui::Slider::new(&mut self.volume.master, VOLUME_RANGE).text("Master"))
-                    .changed()
-                {
-                    self.audio.set_volume(self.volume.master as u8);
-                };
-                if ui
-                    .add(
-                        egui::Slider::new(&mut self.volume.square_1, VOLUME_RANGE).text("Square 1"),
-                    )
-                    .changed()
-                {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy
-                            .audio_control
-                            .set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32)
-                    }
-                };
-                if ui
-                    .add(
-                        egui::Slider::new(&mut self.volume.square_2, VOLUME_RANGE).text("Square 2"),
-                    )
-                    .changed()
-                {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy
-                            .audio_control
-                            .set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32)
-                    }
-                };
-                if ui
-                    .add(egui::Slider::new(&mut self.volume.wave, VOLUME_RANGE).text("Wave"))
-                    .changed()
-                {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy
-                            .audio_control
-                            .set_volume(gameboy::Channel::Wave, self.volume.wave as f32)
-                    }
-                };
-                if ui
-                    .add(egui::Slider::new(&mut self.volume.noise, VOLUME_RANGE).text("Noise"))
-                    .changed()
-                {
-                    if let Some(gameboy) = &self.gameboy {
-                        gameboy
-                            .audio_control
-                            .set_volume(gameboy::Channel::Noise, self.volume.noise as f32)
-                    }
-                };
-            });
-
-        egui::Window::new("Boot ROMs")
-            .title_bar(true)
-            .resizable(false)
-            .collapsible(false)
-            .open(&mut self.boot_rom_options.window_visible)
-            .show(ctx, |ui| {
-                ui.checkbox(&mut self.boot_rom_options.use_bootrom, "Use Bootrom");
-
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-                    ui.radio_value(&mut self.boot_rom_options.gb_type, None, "Auto");
-                    ui.radio_value(
-                        &mut self.boot_rom_options.gb_type,
-                        Some(GameboyType::DMG),
-                        "DMG",
-                    );
-                    ui.radio_value(
-                        &mut self.boot_rom_options.gb_type,
-                        Some(GameboyType::CGB),
-                        "CGB",
-                    );
-                });
-
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-                    if ui.button("upload DMG").clicked() {
-                        open(
-                            &self.events,
-                            &[("Gameboy bootroom", &["bin", "rom"]), ("All Files", &["*"])],
-                            EventType::BootromUpload(GameboyType::DMG),
-                        );
-                    }
-
-                    if ui.button("upload CGB").clicked() {
-                        open(
-                            &self.events,
-                            &[
-                                ("Gameboy Color bootroom", &["bin", "rom"]),
-                                ("All Files", &["*"]),
-                            ],
-                            EventType::BootromUpload(GameboyType::CGB),
-                        );
-                    }
-                });
-            });
-
-        egui::Window::new("Inputs")
-            .title_bar(true)
-            .resizable(false)
-            .collapsible(false)
-            .open(&mut self.inputs_window_open)
-            .show(ctx, |ui| {
-                let inputs = self.inputs.get_or_insert_with(|| {
-                    Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone())
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("A:        ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.a.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::A);
-                        self.input_state = inputs.save();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("B:        ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.b.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::B);
-                        self.input_state = inputs.save();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("Select:   ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.select.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::Select);
-                        self.input_state = inputs.save();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("Start:    ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.start.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::Start);
-                        self.input_state = inputs.save();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("Up:       ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.up.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::Up);
-                        self.input_state = inputs.save();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("Down:     ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.down.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::Down);
-                        self.input_state = inputs.save();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("Left:     ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.left.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::Left);
-                        self.input_state = inputs.save();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.monospace("Right:    ".to_string());
-                    if ui
-                        .text_edit_singleline(&mut inputs.right.to_string())
-                        .has_focus()
-                    {
-                        inputs.update_buttons(crate::input::GBButton::Right);
-                        self.input_state = inputs.save();
-                    }
-                });
-            });
 
         ctx.request_repaint();
     }
