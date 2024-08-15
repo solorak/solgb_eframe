@@ -55,7 +55,9 @@ pub struct TemplateApp {
     inputs: Option<Inputs>,
     inputs_window_open: bool,
     input_state: InputsState,
+    input_touch: [bool; 8],
     show_menu: bool,
+    show_touch: bool,
 }
 
 impl Default for TemplateApp {
@@ -76,7 +78,9 @@ impl Default for TemplateApp {
             inputs: None,
             inputs_window_open: false,
             input_state: InputsState::default(),
+            input_touch: [false; 8],
             show_menu: true,
+            show_touch: false,
         }
     }
 }
@@ -98,6 +102,8 @@ impl TemplateApp {
             font_id.size = 48.0 // whatever size you want here
         }
         cc.egui_ctx.set_style(style);
+
+        egui_extras::install_image_loaders(&cc.egui_ctx);
 
         Self::default()
     }
@@ -133,7 +139,7 @@ impl TemplateApp {
         );
     }
 
-    fn setup(&mut self) {
+    fn handle_custom_events(&mut self) {
         match self.events.get_next() {
             Some(Event::OpenRom(rom)) => {
                 let (name, rom_type) = if let Ok(rom_info) = solgb::cart::RomInfo::new(&rom) {
@@ -229,6 +235,8 @@ impl TemplateApp {
                     self.stream = Some(stream);
 
                     self.started = false;
+
+                    self.show_menu = false;
                 }
             }
             Some(Event::SaveUpload(name, data)) => {
@@ -247,93 +255,93 @@ impl TemplateApp {
             _ => (),
         }
     }
-
+ 
     fn display_inputs(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
-        {
-            let inputs = self.inputs.get_or_insert_with(|| {
-                Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone())
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("A:        ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.a.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::A);
-                    self.input_state = inputs.save();
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("B:        ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.b.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::B);
-                    self.input_state = inputs.save();
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("Select:   ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.select.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::Select);
-                    self.input_state = inputs.save();
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("Start:    ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.start.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::Start);
-                    self.input_state = inputs.save();
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("Up:       ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.up.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::Up);
-                    self.input_state = inputs.save();
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("Down:     ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.down.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::Down);
-                    self.input_state = inputs.save();
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("Left:     ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.left.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::Left);
-                    self.input_state = inputs.save();
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.monospace("Right:    ".to_string());
-                if ui
-                    .text_edit_singleline(&mut inputs.right.to_string())
-                    .has_focus()
-                {
-                    inputs.update_buttons(crate::input::GBButton::Right);
-                    self.input_state = inputs.save();
-                }
-            });
-        }
+        let inputs = self.inputs.get_or_insert_with(|| {
+            Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone())
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("A:        ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.a.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::A);
+                self.input_state = inputs.save();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("B:        ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.b.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::B);
+                self.input_state = inputs.save();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("Select:   ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.select.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::Select);
+                self.input_state = inputs.save();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("Start:    ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.start.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::Start);
+                self.input_state = inputs.save();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("Up:       ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.up.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::Up);
+                self.input_state = inputs.save();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("Down:     ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.down.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::Down);
+                self.input_state = inputs.save();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("Left:     ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.left.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::Left);
+                self.input_state = inputs.save();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.monospace("Right:    ".to_string());
+            if ui
+                .text_edit_singleline(&mut inputs.right.to_string())
+                .has_focus()
+            {
+                inputs.update_buttons(crate::input::GBButton::Right);
+                self.input_state = inputs.save();
+            }
+        });
+        
+        ui.checkbox(&mut self.show_touch, "Show Touch Controls");
     }
 
     pub fn display_boot_roms(&mut self, ui: &mut egui::Ui) {
@@ -438,7 +446,29 @@ impl eframe::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.setup();
+        // //This does not work as expected in the browser
+        // ctx.input(|i| {
+        //     if let Some(stream) = &self.stream {
+        //         for event in &i.raw.events {
+        //             match event {
+        //                 egui::Event::WindowFocused(focused) => {
+        //                     if !focused {
+        //                         log::error!("Window has lost focus, pausing");
+        //                         stream.pause().unwrap();
+        //                     } else {
+        //                         log::error!("Window has gained focus, resuming");
+        //                         stream.play().unwrap();
+        //                     }
+        //                 }
+        //                 _ => (),
+        //             }
+        //         }
+        //     }
+        // });
+
+        egui_extras::install_image_loaders(ctx);
+
+        self.handle_custom_events();
 
         if let Some(saves) = &mut self.saves {
             if let Some(gameboy) = &self.gameboy {
@@ -489,7 +519,12 @@ impl eframe::App for TemplateApp {
                 Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone())
             });
             while let Some(_event) = inputs.gilrs.next_event() {}
-            let inputs = inputs.pressed_all();
+            let mut inputs = inputs.pressed_all();
+            for i in 0..inputs.len() {
+                if self.input_touch[i] {
+                    inputs[i] = true;
+                }
+            }
             gameboy.input_sender.send(inputs).unwrap();
         }
 
@@ -576,6 +611,11 @@ impl eframe::App for TemplateApp {
                     self.display_inputs(ctx, ui);
                     ui.add_space(SPACE_AFTER);
                 }
+
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                    powered_by_egui_and_eframe(ui);
+                    egui::warn_if_debug_build(ui);
+                });
             });
         } else {
             egui::Window::new("control panel")
@@ -592,7 +632,7 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(gb_texture) = &self.gb_texture {
-                ui.centered_and_justified(|ui| {
+                ui.vertical_centered(|ui| {
                     if !self.started {
                         if ui.button("start").clicked() {
                             if let Some(stream) = &self.stream {
@@ -611,12 +651,57 @@ impl eframe::App for TemplateApp {
                         ui.add(gameboy);
                     }
                 });
-            }
 
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
-                egui::warn_if_debug_build(ui);
-            });
+                if self.show_touch {
+                    ui.add_space(16.0);
+
+                    ui.vertical_centered_justified(|ui| {
+                        egui::Grid::new("touch_controls").spacing(&[0.0, 0.0]).min_col_width(ui.available_width() / 6.0).max_col_width(ui.available_width() / 6.0).show(ui, |ui| {
+                            const A: usize = 0;
+                            const B: usize = 1;
+                            const RIGHT: usize = 4;
+                            const LEFT: usize = 5;
+                            const UP: usize = 6;
+                            const DOWN: usize = 7;
+
+                            let tile_size = [ui.available_width(), ui.available_width()];
+
+                            self.input_touch = [false; 8];
+
+                            let up_left = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            let up = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/UP.png"))).contains_pointer();
+                            let up_right = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            ui.end_row();
+
+                            let left = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/LEFT.png"))).contains_pointer();
+                            ui.add_sized(&tile_size, egui::Label::new("")).contains_pointer();
+                            let right = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/RIGHT.png"))).contains_pointer();
+                            ui.add_sized(&tile_size, egui::Label::new("")).contains_pointer();
+                            self.input_touch[B] = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/B.png"))).contains_pointer();
+                            self.input_touch[A] = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/A.png"))).contains_pointer();
+                            ui.end_row();
+
+                            let down_left = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            let down = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/DOWN.png"))).contains_pointer();
+                            let down_right = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            ui.end_row();
+                            ui.end_row();
+
+                            self.input_touch[UP] = up_left | up | up_right;
+                            self.input_touch[DOWN] = down_left | down | down_right;
+                            self.input_touch[LEFT] = up_left | left | down_left;
+                            self.input_touch[RIGHT] = up_right | right | down_right;
+                        });
+
+                        ui.vertical_centered(|ui| {
+                            const SELECT: usize = 2;
+                            const START: usize = 3;
+                            self.input_touch[SELECT] = ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("Select")).contains_pointer();
+                            self.input_touch[START] = ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("Start")).contains_pointer();
+                        });
+                    });
+                }
+            }
         });
 
         ctx.request_repaint();
@@ -625,6 +710,12 @@ impl eframe::App for TemplateApp {
     fn auto_save_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(5)
     }
+    
+    fn persist_egui_memory(&self) -> bool {
+        true
+    }
+    
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, _raw_input: &mut egui::RawInput) {}
 }
 
 fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {

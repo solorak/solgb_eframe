@@ -22,6 +22,8 @@ eframe = { version = "0.28", default-features = false, features = [
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
+egui_extras = { version = "0.28", features = ["image", "http"] }
+image = { version = "0.25", features = ["png"]}
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 bytemuck = "1.16.1"
