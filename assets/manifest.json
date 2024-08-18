@@ -17,11 +17,6 @@
       "src": "./icon-1024.png",
       "sizes": "1024x1024",
       "type": "image/png"
-    },
-    {
-      "src": "./button.png",
-      "sizes": "50x50",
-      "type": "image/png"
     }
   ],
   "lang": "en-US",

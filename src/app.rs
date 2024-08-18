@@ -108,26 +108,6 @@ impl TemplateApp {
         Self::default()
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    fn load(&mut self) {
-        use rfd::FileDialog;
-        use std::fs::File;
-        use std::io::Read;
-
-        let path = FileDialog::new()
-            .add_filter("Gameboy Rom", &["gb", "gbc"])
-            .add_filter("Gameboy Color Rom", &["gb", "gbc"])
-            .set_directory("/")
-            .pick_file()
-            .unwrap();
-
-        let mut file = File::open(&path).unwrap();
-        let mut data = Vec::new();
-        file.read_to_end(&mut data).unwrap();
-        self.sender.send(data).unwrap();
-    }
-
-    #[cfg(target_arch = "wasm32")]
     fn load(&mut self) {
         open(
             &self.events,
@@ -827,9 +807,7 @@ pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: Even
             match event_type {
                 EventType::OpenRom => events.push(Event::OpenRom(data)),
                 EventType::SaveUpload => events.push(Event::SaveUpload(file.file_name(), data)),
-                EventType::BootromUpload(gb_type) => {
-                    events.push(Event::BootromUpload(gb_type, data))
-                }
+                EventType::BootromUpload(gb_type) => events.push(Event::BootromUpload(gb_type, data)),
             }
         }
         show_canvas()
@@ -838,23 +816,49 @@ pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: Even
     wasm_bindgen_futures::spawn_local(future);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: EventType) {
+    use rfd::FileDialog;
+
+    let mut file_dialog = FileDialog::new();
+    for (name, extensions) in filter {
+        file_dialog = file_dialog.add_filter(*name, extensions);
+    }
+    file_dialog = file_dialog.set_directory("/");
+
+    if let Some(file) = file_dialog.pick_file() {
+        let name = file.file_name().unwrap_or_default().to_str().unwrap_or_default().to_owned();
+        if let Ok(data) = std::fs::read(file) {
+            match event_type {
+                EventType::OpenRom => events.push(Event::OpenRom(data)),
+                EventType::SaveUpload => events.push(Event::SaveUpload(name, data)),
+                EventType::BootromUpload(gb_type) => events.push(Event::BootromUpload(gb_type, data)),
+            }
+        }
+    }
+}
+
 //We have to hide the canvas while opening files because in some browsers the buttons don't work
 fn hide_canvas() {
-    let canvas = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id("the_canvas_id"));
-    if let Some(canvas) = canvas {
-        canvas
-            .set_attribute("style", "outline: none; display: none;")
-            .unwrap();
+    #[cfg(target_arch = "wasm32")] {
+        let canvas = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("the_canvas_id"));
+        if let Some(canvas) = canvas {
+            canvas
+                .set_attribute("style", "outline: none; display: none;")
+                .unwrap();
+        }
     }
 }
 
 fn show_canvas() {
-    let canvas = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.get_element_by_id("the_canvas_id"));
-    if let Some(canvas) = canvas {
-        canvas.set_attribute("style", "outline: none;").unwrap();
+#[cfg(target_arch = "wasm32")] {
+        let canvas = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("the_canvas_id"));
+        if let Some(canvas) = canvas {
+            canvas.set_attribute("style", "outline: none;").unwrap();
+        }
     }
 }
