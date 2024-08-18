@@ -1,4 +1,3 @@
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use cpal::traits::StreamTrait;
 use cpal::Stream;
 use egui::load::SizedTexture;
@@ -12,7 +11,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ops::RangeInclusive;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -130,37 +129,18 @@ impl TemplateApp {
                 };
 
                 if let Some(saves) = &mut self.saves {
-                    saves.save_ram = if let Ok(Some(encoded)) = saves.storage.get_item(&name) {
-                        let save_ram = STANDARD.decode(encoded).unwrap_or_default();
-                        Arc::new(Mutex::new(save_ram))
-                    } else {
-                        Arc::new(Mutex::new(Vec::new()))
-                    };
+                    saves.setup_saveram(&name);
 
                     let mut boot_rom = match (&self.boot_rom_options.gb_type, &rom_type) {
                         (None, CartType::GB)
                         | (Some(GameboyType::DMG), CartType::GB)
                         | (Some(GameboyType::DMG), CartType::Hybrid)
-                        | (Some(GameboyType::DMG), CartType::CGB) => {
-                            let encoded = saves
-                                .storage
-                                .get_item(DMG_ROM_NAME)
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                            STANDARD.decode(encoded).ok()
-                        }
+                        | (Some(GameboyType::DMG), CartType::CGB) => saves.load(&DMG_ROM_NAME),
                         (None, CartType::CGB)
                         | (None, CartType::Hybrid)
                         | (Some(GameboyType::CGB), CartType::GB)
                         | (Some(GameboyType::CGB), CartType::CGB)
-                        | (Some(GameboyType::CGB), CartType::Hybrid) => {
-                            let encoded = saves
-                                .storage
-                                .get_item(CGB_ROM_NAME)
-                                .unwrap_or(None)
-                                .unwrap_or_default();
-                            STANDARD.decode(encoded).ok()
-                        }
+                        | (Some(GameboyType::CGB), CartType::Hybrid) => saves.load(&CGB_ROM_NAME),
                     };
 
                     if !self.boot_rom_options.use_bootrom {

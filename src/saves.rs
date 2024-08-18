@@ -13,7 +13,7 @@ use zip::write::SimpleFileOptions;
 use crate::app::Events;
 
 pub struct Saves {
-    pub storage: Storage,
+    storage: Storage,
     last_save: Instant,
     pub save_ram: Arc<Mutex<Vec<u8>>>,
     events: Events,
@@ -40,6 +40,15 @@ impl Saves {
         self.rom_info = rom_info;
     }
 
+    pub fn setup_saveram(&mut self, name: &str) {
+        self.save_ram = if let Ok(Some(encoded)) = self.storage.get_item(name) {
+            let save_ram = STANDARD.decode(encoded).unwrap_or_default();
+            Arc::new(Mutex::new(save_ram))
+        } else {
+            Arc::new(Mutex::new(Vec::new()))
+        };
+    }
+
     pub fn save_current(&mut self, name: &str) {
         const SAVE_INTERVAL: u64 = 5;
         if self.last_save.elapsed() > Duration::from_secs(SAVE_INTERVAL) {
@@ -60,6 +69,15 @@ impl Saves {
     pub fn save(&mut self, name: &str, data: &[u8]) {
         let encoded = STANDARD.encode(data);
         self.storage.set_item(name, &encoded).unwrap();
+    }
+
+    pub fn load(&mut self, name: &str) -> Option<Vec<u8>> {
+        let encoded = self
+            .storage
+            .get_item(name)
+            .unwrap_or(None)
+            .unwrap_or_default();
+        STANDARD.decode(encoded).ok()
     }
 
     pub fn download(&mut self, name: &str) -> Result<(), String> {
