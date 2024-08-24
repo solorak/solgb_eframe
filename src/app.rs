@@ -424,7 +424,7 @@ impl eframe::App for TemplateApp {
         if let Some(gameboy) = &mut self.gameboy {
             if gameboy.video_rec.len() > 60 {
                 log::warn!("We are over 1 second behind on rendering frames (was the window inactive?)\nskipping to current frame");
-                while let Ok(_) = gameboy.video_rec.try_recv() {}
+                while gameboy.video_rec.try_recv().is_ok() {}
             }
             log::info!("Rendering Frame for: {}", gameboy.rom_info.get_name());
             if let Ok(buffer_u32) = gameboy.video_rec.try_recv() {
@@ -466,9 +466,9 @@ impl eframe::App for TemplateApp {
             });
             while let Some(_event) = inputs.gilrs.next_event() {}
             let mut inputs = inputs.pressed_all();
-            for i in 0..inputs.len() {
+            for (i, input) in inputs.iter_mut().enumerate() {
                 if self.input_touch[i] {
-                    inputs[i] = true;
+                    *input = true;
                 }
             }
             gameboy.input_sender.send(inputs).unwrap();
@@ -512,8 +512,8 @@ impl eframe::App for TemplateApp {
                 }
                 ctx.set_style(style);
 
-                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("open")).clicked() {
-                    if let None = &self.stream {
+                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("open")).clicked() {
+                    if self.stream.is_none() {
                         self.stream = Some(self.audio.get_stream());
                     }
                     if let Some(stream) = &self.stream {
@@ -525,7 +525,7 @@ impl eframe::App for TemplateApp {
                     self.load()
                 }
 
-                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("bootroms")).clicked() {
+                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("bootroms")).clicked() {
                     self.bootrom_options.window_visible = !self.bootrom_options.window_visible;
                 }
 
@@ -535,7 +535,7 @@ impl eframe::App for TemplateApp {
                     ui.add_space(SPACE_AFTER);
                 }
 
-                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("saves")).clicked() {
+                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("saves")).clicked() {
                     self.saves_visible = ! self.saves_visible;
                 }
 
@@ -547,7 +547,7 @@ impl eframe::App for TemplateApp {
                     ui.add_space(SPACE_AFTER);
                 }
 
-                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("volume")).clicked() {
+                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("volume")).clicked() {
                     self.volume.window_visible = !self.volume.window_visible;
                 }
 
@@ -557,7 +557,7 @@ impl eframe::App for TemplateApp {
                     ui.add_space(SPACE_AFTER);
                 }
 
-                if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("input")).clicked() {
+                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("input")).clicked() {
                     self.inputs_visible = !self.inputs_visible;
                 }
 
@@ -600,7 +600,7 @@ impl eframe::App for TemplateApp {
                     ui.add_space(16.0);
 
                     ui.vertical_centered_justified(|ui| {
-                        egui::Grid::new("touch_controls").spacing(&[0.0, 0.0]).min_col_width(ui.available_width() / 6.0).max_col_width(ui.available_width() / 6.0).show(ui, |ui| {
+                        egui::Grid::new("touch_controls").spacing([0.0, 0.0]).min_col_width(ui.available_width() / 6.0).max_col_width(ui.available_width() / 6.0).show(ui, |ui| {
                             const A: usize = 0;
                             const B: usize = 1;
                             const RIGHT: usize = 4;
@@ -612,22 +612,22 @@ impl eframe::App for TemplateApp {
 
                             self.input_touch = [false; 8];
 
-                            let up_left = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
-                            let up = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/UP.png"))).contains_pointer();
-                            let up_right = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            let up_left = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            let up = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/UP.png"))).contains_pointer();
+                            let up_right = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
                             ui.end_row();
 
-                            let left = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/LEFT.png"))).contains_pointer();
-                            ui.add_sized(&tile_size, egui::Label::new("")).contains_pointer();
-                            let right = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/RIGHT.png"))).contains_pointer();
-                            ui.add_sized(&tile_size, egui::Label::new("")).contains_pointer();
-                            self.input_touch[B] = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/B.png"))).contains_pointer();
-                            self.input_touch[A] = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/A.png"))).contains_pointer();
+                            let left = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/LEFT.png"))).contains_pointer();
+                            ui.add_sized(tile_size, egui::Label::new("")).contains_pointer();
+                            let right = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/RIGHT.png"))).contains_pointer();
+                            ui.add_sized(tile_size, egui::Label::new("")).contains_pointer();
+                            self.input_touch[B] = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/B.png"))).contains_pointer();
+                            self.input_touch[A] = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/A.png"))).contains_pointer();
                             ui.end_row();
 
-                            let down_left = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
-                            let down = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/DOWN.png"))).contains_pointer();
-                            let down_right = ui.add_sized(&tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            let down_left = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
+                            let down = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/DOWN.png"))).contains_pointer();
+                            let down_right = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
                             ui.end_row();
                             ui.end_row();
 
@@ -640,8 +640,8 @@ impl eframe::App for TemplateApp {
                         ui.vertical_centered(|ui| {
                             const SELECT: usize = 2;
                             const START: usize = 3;
-                            self.input_touch[SELECT] = ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("Select")).contains_pointer();
-                            self.input_touch[START] = ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("Start")).contains_pointer();
+                            self.input_touch[SELECT] = ui.add_sized([ui.available_width(), 0.0], egui::Button::new("Select")).contains_pointer();
+                            self.input_touch[START] = ui.add_sized([ui.available_width(), 0.0], egui::Button::new("Start")).contains_pointer();
                         });
                     });
                 }

@@ -80,7 +80,9 @@ impl Audio {
         let ac_receiver = self.ac_receiver.clone();
         let mut audio_control: Option<AudioControl> = None;
 
-        let stream = match config.channels {
+        
+
+        match config.channels {
             2 => {
                 self.device.build_output_stream(
                     &config,
@@ -130,9 +132,7 @@ impl Audio {
                 )
             }
             _ => panic!(),
-        }.unwrap();
-
-        stream
+        }.unwrap()
 
     }
 }

@@ -76,12 +76,12 @@ impl Saves {
             (None, CartType::GB)
             | (Some(GameboyType::DMG), CartType::GB)
             | (Some(GameboyType::DMG), CartType::Hybrid)
-            | (Some(GameboyType::DMG), CartType::CGB) => self.load(&DMG_ROM_NAME),
+            | (Some(GameboyType::DMG), CartType::CGB) => self.load(DMG_ROM_NAME),
             (None, CartType::CGB)
             | (None, CartType::Hybrid)
             | (Some(GameboyType::CGB), CartType::GB)
             | (Some(GameboyType::CGB), CartType::CGB)
-            | (Some(GameboyType::CGB), CartType::Hybrid) => self.load(&CGB_ROM_NAME),
+            | (Some(GameboyType::CGB), CartType::Hybrid) => self.load(CGB_ROM_NAME),
         };
 
         if !bootrom_options.use_bootrom {

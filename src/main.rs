@@ -32,7 +32,7 @@ fn main() {
     if cfg!(debug_assertions) {
         eframe::WebLogger::init(log::LevelFilter::Trace).ok();
     } else {
-        eframe::WebLogger::init(log::LevelFilter::Trace).ok();
+        eframe::WebLogger::init(log::LevelFilter::Warn).ok();
     }
 
     let web_options = eframe::WebOptions::default();
