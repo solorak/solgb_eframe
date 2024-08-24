@@ -200,7 +200,7 @@ impl TemplateApp {
             _ => (),
         }
     }
- 
+
     fn display_inputs(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
         let inputs = self.inputs.get_or_insert_with(|| {
             Inputs::with_state(Gilrs::new().unwrap(), ctx.clone(), self.input_state.clone())
@@ -285,7 +285,7 @@ impl TemplateApp {
                 self.input_state = inputs.save();
             }
         });
-        
+
         ui.checkbox(&mut self.touch_visible, "Show Touch Controls");
     }
 
@@ -337,9 +337,7 @@ impl TemplateApp {
             self.audio.set_volume(self.volume.master as u8);
         };
         if ui
-            .add(
-                egui::Slider::new(&mut self.volume.square_1, VOLUME_RANGE).text("Square 1"),
-            )
+            .add(egui::Slider::new(&mut self.volume.square_1, VOLUME_RANGE).text("Square 1"))
             .changed()
         {
             if let Some(gameboy) = &self.gameboy {
@@ -349,9 +347,7 @@ impl TemplateApp {
             }
         };
         if ui
-            .add(
-                egui::Slider::new(&mut self.volume.square_2, VOLUME_RANGE).text("Square 2"),
-            )
+            .add(egui::Slider::new(&mut self.volume.square_2, VOLUME_RANGE).text("Square 2"))
             .changed()
         {
             if let Some(gameboy) = &self.gameboy {
@@ -476,113 +472,128 @@ impl eframe::App for TemplateApp {
 
         if self.menu_visible {
             egui::Window::new("control panel")
-            .fixed_pos([0.0, 0.0])
-            .min_height(ctx.screen_rect().size().y)
-            .min_width(400.0)
-            .constrain(true)
-            .title_bar(false)
-            .resizable(true)
-            .vscroll(true)
-            .show(ctx, |ui| {
-                const SPACE_BEFORE: f32 = 2.0;
-                const SPACE_AFTER: f32 = 10.0;
-                // ui.set_max_width(285.0);
-                ui.set_min_height(ctx.screen_rect().size().y);
+                .fixed_pos([0.0, 0.0])
+                .min_height(ctx.screen_rect().size().y)
+                .min_width(400.0)
+                .constrain(true)
+                .title_bar(false)
+                .resizable(true)
+                .vscroll(true)
+                .show(ctx, |ui| {
+                    const SPACE_BEFORE: f32 = 2.0;
+                    const SPACE_AFTER: f32 = 10.0;
+                    // ui.set_max_width(285.0);
+                    ui.set_min_height(ctx.screen_rect().size().y);
 
-                // NOTE: no File->Quit on web pages!
-                let is_web = cfg!(target_arch = "wasm32");
-                if !is_web {
-                    ui.menu_button("File", |ui| {
-                        if ui.button("Quit").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    // NOTE: no File->Quit on web pages!
+                    let is_web = cfg!(target_arch = "wasm32");
+                    if !is_web {
+                        ui.menu_button("File", |ui| {
+                            if ui.button("Quit").clicked() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        });
+                        ui.add_space(16.0);
+                    }
+
+                    if ui.button(RichText::new("≡").monospace()).clicked() {
+                        self.menu_visible = !self.menu_visible;
+                    }
+
+                    egui::widgets::global_dark_light_mode_buttons(ui);
+
+                    let mut style = (*ctx.style()).clone();
+                    for (_text_style, font_id) in style.text_styles.iter_mut() {
+                        font_id.size = 18.0 // whatever size you want here
+                    }
+                    ctx.set_style(style);
+
+                    if ui
+                        .add_sized([ui.available_width(), 0.0], egui::Button::new("open"))
+                        .clicked()
+                    {
+                        if self.stream.is_none() {
+                            self.stream = Some(self.audio.get_stream());
                         }
+                        if let Some(stream) = &self.stream {
+                            if let Err(err) = stream.pause() {
+                                log::error!("Unable to pause stream: {err}");
+                            }
+                        }
+
+                        self.load()
+                    }
+
+                    if ui
+                        .add_sized([ui.available_width(), 0.0], egui::Button::new("bootroms"))
+                        .clicked()
+                    {
+                        self.bootrom_options.window_visible = !self.bootrom_options.window_visible;
+                    }
+
+                    if self.bootrom_options.window_visible {
+                        ui.add_space(SPACE_BEFORE);
+                        self.display_boot_roms(ui);
+                        ui.add_space(SPACE_AFTER);
+                    }
+
+                    if ui
+                        .add_sized([ui.available_width(), 0.0], egui::Button::new("saves"))
+                        .clicked()
+                    {
+                        self.saves_visible = !self.saves_visible;
+                    }
+
+                    if self.saves_visible {
+                        ui.add_space(SPACE_BEFORE);
+                        if let Some(saves) = &mut self.saves {
+                            saves.show_save_manager(ui);
+                        }
+                        ui.add_space(SPACE_AFTER);
+                    }
+
+                    if ui
+                        .add_sized([ui.available_width(), 0.0], egui::Button::new("volume"))
+                        .clicked()
+                    {
+                        self.volume.window_visible = !self.volume.window_visible;
+                    }
+
+                    if self.volume.window_visible {
+                        ui.add_space(SPACE_BEFORE);
+                        self.display_volume(ui);
+                        ui.add_space(SPACE_AFTER);
+                    }
+
+                    if ui
+                        .add_sized([ui.available_width(), 0.0], egui::Button::new("input"))
+                        .clicked()
+                    {
+                        self.inputs_visible = !self.inputs_visible;
+                    }
+
+                    if self.inputs_visible {
+                        ui.add_space(SPACE_BEFORE);
+                        self.display_inputs(ctx, ui);
+                        ui.add_space(SPACE_AFTER);
+                    }
+
+                    ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                        powered_by_egui_and_eframe(ui);
+                        egui::warn_if_debug_build(ui);
                     });
-                    ui.add_space(16.0);
-                }
-
-                if ui.button(RichText::new("≡").monospace()).clicked() {
-                    self.menu_visible = !self.menu_visible;
-                }
-
-                egui::widgets::global_dark_light_mode_buttons(ui);
-
-                let mut style = (*ctx.style()).clone();
-                for (_text_style, font_id) in style.text_styles.iter_mut() {
-                    font_id.size = 18.0 // whatever size you want here
-                }
-                ctx.set_style(style);
-
-                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("open")).clicked() {
-                    if self.stream.is_none() {
-                        self.stream = Some(self.audio.get_stream());
-                    }
-                    if let Some(stream) = &self.stream {
-                        if let Err(err) = stream.pause() {
-                            log::error!("Unable to pause stream: {err}");
-                        }
-                    }
-
-                    self.load()
-                }
-
-                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("bootroms")).clicked() {
-                    self.bootrom_options.window_visible = !self.bootrom_options.window_visible;
-                }
-
-                if self.bootrom_options.window_visible {
-                    ui.add_space(SPACE_BEFORE);
-                    self.display_boot_roms(ui);
-                    ui.add_space(SPACE_AFTER);
-                }
-
-                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("saves")).clicked() {
-                    self.saves_visible = ! self.saves_visible;
-                }
-
-                if self.saves_visible {
-                    ui.add_space(SPACE_BEFORE);
-                    if let Some(saves) = &mut self.saves {
-                        saves.show_save_manager(ui);
-                    }
-                    ui.add_space(SPACE_AFTER);
-                }
-
-                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("volume")).clicked() {
-                    self.volume.window_visible = !self.volume.window_visible;
-                }
-
-                if self.volume.window_visible {
-                    ui.add_space(SPACE_BEFORE);
-                    self.display_volume(ui);
-                    ui.add_space(SPACE_AFTER);
-                }
-
-                if ui.add_sized([ui.available_width(), 0.0], egui::Button::new("input")).clicked() {
-                    self.inputs_visible = !self.inputs_visible;
-                }
-
-                if self.inputs_visible {
-                    ui.add_space(SPACE_BEFORE);
-                    self.display_inputs(ctx, ui);
-                    ui.add_space(SPACE_AFTER);
-                }
-
-                ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    powered_by_egui_and_eframe(ui);
-                    egui::warn_if_debug_build(ui);
                 });
-            });
         } else {
             egui::Window::new("control panel")
-            .fixed_pos([0.0, 0.0])
-            .constrain(true)
-            .title_bar(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                if ui.button(RichText::new("≡").monospace()).clicked() {
-                    self.menu_visible = !self.menu_visible;
-                }
-            });
+                .fixed_pos([0.0, 0.0])
+                .constrain(true)
+                .title_bar(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    if ui.button(RichText::new("≡").monospace()).clicked() {
+                        self.menu_visible = !self.menu_visible;
+                    }
+                });
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -600,48 +611,122 @@ impl eframe::App for TemplateApp {
                     ui.add_space(16.0);
 
                     ui.vertical_centered_justified(|ui| {
-                        egui::Grid::new("touch_controls").spacing([0.0, 0.0]).min_col_width(ui.available_width() / 6.0).max_col_width(ui.available_width() / 6.0).show(ui, |ui| {
-                            const A: usize = 0;
-                            const B: usize = 1;
-                            const RIGHT: usize = 4;
-                            const LEFT: usize = 5;
-                            const UP: usize = 6;
-                            const DOWN: usize = 7;
+                        egui::Grid::new("touch_controls")
+                            .spacing([0.0, 0.0])
+                            .min_col_width(ui.available_width() / 6.0)
+                            .max_col_width(ui.available_width() / 6.0)
+                            .show(ui, |ui| {
+                                const A: usize = 0;
+                                const B: usize = 1;
+                                const RIGHT: usize = 4;
+                                const LEFT: usize = 5;
+                                const UP: usize = 6;
+                                const DOWN: usize = 7;
 
-                            let tile_size = [ui.available_width(), ui.available_width()];
+                                let tile_size = [ui.available_width(), ui.available_width()];
 
-                            self.input_touch = [false; 8];
+                                self.input_touch = [false; 8];
 
-                            let up_left = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
-                            let up = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/UP.png"))).contains_pointer();
-                            let up_right = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
-                            ui.end_row();
+                                let up_left = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!(
+                                            "../assets/TRANS.png"
+                                        )),
+                                    )
+                                    .contains_pointer();
+                                let up = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!("../assets/UP.png")),
+                                    )
+                                    .contains_pointer();
+                                let up_right = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!(
+                                            "../assets/TRANS.png"
+                                        )),
+                                    )
+                                    .contains_pointer();
+                                ui.end_row();
 
-                            let left = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/LEFT.png"))).contains_pointer();
-                            ui.add_sized(tile_size, egui::Label::new("")).contains_pointer();
-                            let right = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/RIGHT.png"))).contains_pointer();
-                            ui.add_sized(tile_size, egui::Label::new("")).contains_pointer();
-                            self.input_touch[B] = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/B.png"))).contains_pointer();
-                            self.input_touch[A] = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/A.png"))).contains_pointer();
-                            ui.end_row();
+                                let left = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!(
+                                            "../assets/LEFT.png"
+                                        )),
+                                    )
+                                    .contains_pointer();
+                                ui.add_sized(tile_size, egui::Label::new(""))
+                                    .contains_pointer();
+                                let right = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!(
+                                            "../assets/RIGHT.png"
+                                        )),
+                                    )
+                                    .contains_pointer();
+                                ui.add_sized(tile_size, egui::Label::new(""))
+                                    .contains_pointer();
+                                self.input_touch[B] = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!("../assets/B.png")),
+                                    )
+                                    .contains_pointer();
+                                self.input_touch[A] = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!("../assets/A.png")),
+                                    )
+                                    .contains_pointer();
+                                ui.end_row();
 
-                            let down_left = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
-                            let down = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/DOWN.png"))).contains_pointer();
-                            let down_right = ui.add_sized(tile_size, egui::Image::new(egui::include_image!("../assets/TRANS.png"))).contains_pointer();
-                            ui.end_row();
-                            ui.end_row();
+                                let down_left = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!(
+                                            "../assets/TRANS.png"
+                                        )),
+                                    )
+                                    .contains_pointer();
+                                let down = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!(
+                                            "../assets/DOWN.png"
+                                        )),
+                                    )
+                                    .contains_pointer();
+                                let down_right = ui
+                                    .add_sized(
+                                        tile_size,
+                                        egui::Image::new(egui::include_image!(
+                                            "../assets/TRANS.png"
+                                        )),
+                                    )
+                                    .contains_pointer();
+                                ui.end_row();
+                                ui.end_row();
 
-                            self.input_touch[UP] = up_left | up | up_right;
-                            self.input_touch[DOWN] = down_left | down | down_right;
-                            self.input_touch[LEFT] = up_left | left | down_left;
-                            self.input_touch[RIGHT] = up_right | right | down_right;
-                        });
+                                self.input_touch[UP] = up_left | up | up_right;
+                                self.input_touch[DOWN] = down_left | down | down_right;
+                                self.input_touch[LEFT] = up_left | left | down_left;
+                                self.input_touch[RIGHT] = up_right | right | down_right;
+                            });
 
                         ui.vertical_centered(|ui| {
                             const SELECT: usize = 2;
                             const START: usize = 3;
-                            self.input_touch[SELECT] = ui.add_sized([ui.available_width(), 0.0], egui::Button::new("Select")).contains_pointer();
-                            self.input_touch[START] = ui.add_sized([ui.available_width(), 0.0], egui::Button::new("Start")).contains_pointer();
+                            self.input_touch[SELECT] = ui
+                                .add_sized([ui.available_width(), 0.0], egui::Button::new("Select"))
+                                .contains_pointer();
+                            self.input_touch[START] = ui
+                                .add_sized([ui.available_width(), 0.0], egui::Button::new("Start"))
+                                .contains_pointer();
                         });
                     });
                 }
@@ -654,11 +739,11 @@ impl eframe::App for TemplateApp {
     fn auto_save_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(5)
     }
-    
+
     fn persist_egui_memory(&self) -> bool {
         true
     }
-    
+
     fn raw_input_hook(&mut self, _ctx: &egui::Context, _raw_input: &mut egui::RawInput) {}
 }
 
@@ -771,7 +856,9 @@ pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: Even
             match event_type {
                 EventType::OpenRom => events.push(Event::OpenRom(data)),
                 EventType::SaveUpload => events.push(Event::SaveUpload(file.file_name(), data)),
-                EventType::BootromUpload(gb_type) => events.push(Event::BootromUpload(gb_type, data)),
+                EventType::BootromUpload(gb_type) => {
+                    events.push(Event::BootromUpload(gb_type, data))
+                }
             }
         }
         show_canvas()
@@ -791,12 +878,19 @@ pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: Even
     file_dialog = file_dialog.set_directory("/");
 
     if let Some(file) = file_dialog.pick_file() {
-        let name = file.file_name().unwrap_or_default().to_str().unwrap_or_default().to_owned();
+        let name = file
+            .file_name()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or_default()
+            .to_owned();
         if let Ok(data) = std::fs::read(file) {
             match event_type {
                 EventType::OpenRom => events.push(Event::OpenRom(data)),
                 EventType::SaveUpload => events.push(Event::SaveUpload(name, data)),
-                EventType::BootromUpload(gb_type) => events.push(Event::BootromUpload(gb_type, data)),
+                EventType::BootromUpload(gb_type) => {
+                    events.push(Event::BootromUpload(gb_type, data))
+                }
             }
         }
     }
@@ -804,7 +898,8 @@ pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: Even
 
 //We have to hide the canvas while opening files because in some browsers the buttons don't work
 fn hide_canvas() {
-    #[cfg(target_arch = "wasm32")] {
+    #[cfg(target_arch = "wasm32")]
+    {
         let canvas = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.get_element_by_id("the_canvas_id"));
@@ -817,7 +912,8 @@ fn hide_canvas() {
 }
 
 fn show_canvas() {
-#[cfg(target_arch = "wasm32")] {
+    #[cfg(target_arch = "wasm32")]
+    {
         let canvas = web_sys::window()
             .and_then(|w| w.document())
             .and_then(|d| d.get_element_by_id("the_canvas_id"));

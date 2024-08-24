@@ -1,4 +1,7 @@
-use std::sync::{atomic::{AtomicU8, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc,
+};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait},
@@ -16,7 +19,7 @@ pub struct Audio {
     pub config: SupportedStreamConfig,
     volume: Arc<AtomicU8>,
     ac_receiver: Receiver<AudioControl>,
-    ac_sender: Sender<AudioControl>
+    ac_sender: Sender<AudioControl>,
 }
 
 impl Audio {
@@ -65,22 +68,21 @@ impl Audio {
         if volume > 100 {
             volume = 100;
         }
-        self.volume
-            .store(volume, Ordering::Relaxed)
+        self.volume.store(volume, Ordering::Relaxed)
     }
 
-    fn setup<T>(&self) -> Stream 
+    fn setup<T>(&self) -> Stream
     where
         T: SizedSample + FromSample<f32>,
     {
+        const TIMEOUT: Duration = Duration::from_millis(20);
+
         let config: StreamConfig = self.config.clone().into();
         log::info!("Actual output config: {:?}", config);
         let mut last = 0f32;
         let volume = self.volume.clone();
         let ac_receiver = self.ac_receiver.clone();
         let mut audio_control: Option<AudioControl> = None;
-
-        
 
         match config.channels {
             2 => {
@@ -89,7 +91,6 @@ impl Audio {
                     {
                         let mut buffer = Vec::new().into_iter();
                         move |out: &mut [T], _: &cpal::OutputCallbackInfo| {
-
                             if let Ok(ac) = ac_receiver.try_recv() {
                                 log::info!("Loaded new AudioControl");
                                 audio_control = Some(ac);
@@ -97,7 +98,7 @@ impl Audio {
 
                             let Some(sample_rec) = &audio_control else {
                                 out.fill(T::from_sample(0.0));
-                                return
+                                return;
                             };
 
                             for value in out.iter_mut() {
@@ -111,16 +112,14 @@ impl Audio {
                                                 buffer = samples.into_iter();
                                                 break;
                                             }
-                                            if Instant::now().duration_since(start) > Duration::from_millis(20) {
+                                            if Instant::now().duration_since(start) > TIMEOUT {
                                                 return;
                                             }
                                         }
                                         buffer.next().unwrap_or(last)
                                     }
                                 };
-                                let volume = (volume.load(Ordering::Relaxed)
-                                    as f32)
-                                    / 100.0;
+                                let volume = (volume.load(Ordering::Relaxed) as f32) / 100.0;
                                 *value = T::from_sample(last * volume);
                             }
                         }
@@ -132,7 +131,7 @@ impl Audio {
                 )
             }
             _ => panic!(),
-        }.unwrap()
-
+        }
+        .unwrap()
     }
 }
