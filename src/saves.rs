@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use solgb::cart::RomInfo;
+use solgb::{cart::{CartType, RomInfo}, gameboy::GameboyType};
 use std::{
     collections::BTreeMap,
     io::{self, Write},
@@ -10,7 +10,7 @@ use web_sys::Storage;
 use web_time::{Duration, Instant};
 use zip::write::SimpleFileOptions;
 
-use crate::app::Events;
+use crate::app::{BootRomOptions, Events, CGB_ROM_NAME, DMG_ROM_NAME};
 
 pub struct Saves {
     storage: Storage,
@@ -71,7 +71,27 @@ impl Saves {
         self.storage.set_item(name, &encoded).unwrap();
     }
 
-    pub fn load(&mut self, name: &str) -> Option<Vec<u8>> {
+    pub fn load_bootrom(&mut self, rom_type: &CartType, bootrom_options: &BootRomOptions) -> Option<Vec<u8>> {
+        let mut boot_rom = match (&bootrom_options.gb_type, &rom_type) {
+            (None, CartType::GB)
+            | (Some(GameboyType::DMG), CartType::GB)
+            | (Some(GameboyType::DMG), CartType::Hybrid)
+            | (Some(GameboyType::DMG), CartType::CGB) => self.load(&DMG_ROM_NAME),
+            (None, CartType::CGB)
+            | (None, CartType::Hybrid)
+            | (Some(GameboyType::CGB), CartType::GB)
+            | (Some(GameboyType::CGB), CartType::CGB)
+            | (Some(GameboyType::CGB), CartType::Hybrid) => self.load(&CGB_ROM_NAME),
+        };
+
+        if !bootrom_options.use_bootrom {
+            boot_rom = None;
+        }
+
+        boot_rom
+    }
+
+    fn load(&mut self, name: &str) -> Option<Vec<u8>> {
         let encoded = self
             .storage
             .get_item(name)

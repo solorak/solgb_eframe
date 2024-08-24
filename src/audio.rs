@@ -1,15 +1,22 @@
-use std::sync::{atomic::AtomicU8, Arc};
+use std::sync::{atomic::{AtomicU8, Ordering}, Arc};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait},
     Device, FromSample, SizedSample, Stream, StreamConfig, SupportedStreamConfig,
 };
+use crossbeam_channel::{Receiver, Sender};
 use solgb::gameboy::AudioControl;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 pub struct Audio {
     pub device: Device,
     pub config: SupportedStreamConfig,
     volume: Arc<AtomicU8>,
+    ac_receiver: Receiver<AudioControl>,
+    ac_sender: Sender<AudioControl>
 }
 
 impl Audio {
@@ -21,27 +28,36 @@ impl Audio {
         log::info!("Default output config: {:?}", config);
 
         let volume = Arc::new(AtomicU8::new(0));
+        let (ac_sender, ac_receiver) = crossbeam_channel::unbounded();
 
         Self {
             device,
             config,
             volume,
+            ac_receiver,
+            ac_sender,
         }
     }
 
-    pub fn get_stream(&self, sample_rec: AudioControl) -> Stream {
+    pub fn get_stream(&self) -> Stream {
         match self.config.sample_format() {
-            cpal::SampleFormat::I8 => self.setup::<i8>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::I16 => self.setup::<i16>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::I32 => self.setup::<i32>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::I64 => self.setup::<i64>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::U8 => self.setup::<u8>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::U16 => self.setup::<u16>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::U32 => self.setup::<u32>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::U64 => self.setup::<u64>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::F32 => self.setup::<f32>(sample_rec, self.volume.clone()),
-            cpal::SampleFormat::F64 => self.setup::<f64>(sample_rec, self.volume.clone()),
+            cpal::SampleFormat::I8 => self.setup::<i8>(),
+            cpal::SampleFormat::I16 => self.setup::<i16>(),
+            cpal::SampleFormat::I32 => self.setup::<i32>(),
+            cpal::SampleFormat::I64 => self.setup::<i64>(),
+            cpal::SampleFormat::U8 => self.setup::<u8>(),
+            cpal::SampleFormat::U16 => self.setup::<u16>(),
+            cpal::SampleFormat::U32 => self.setup::<u32>(),
+            cpal::SampleFormat::U64 => self.setup::<u64>(),
+            cpal::SampleFormat::F32 => self.setup::<f32>(),
+            cpal::SampleFormat::F64 => self.setup::<f64>(),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
+        }
+    }
+
+    pub fn set_audio_control(&mut self, audio_control: AudioControl) {
+        if let Err(err) = self.ac_sender.send(audio_control) {
+            log::error!("Unable to send AudioControl to callback: {err}");
         }
     }
 
@@ -50,39 +66,57 @@ impl Audio {
             volume = 100;
         }
         self.volume
-            .store(volume, std::sync::atomic::Ordering::Relaxed)
+            .store(volume, Ordering::Relaxed)
     }
 
-    fn setup<T>(&self, mut sample_rec: AudioControl, volume: Arc<AtomicU8>) -> Stream
+    fn setup<T>(&self) -> Stream 
     where
         T: SizedSample + FromSample<f32>,
     {
         let config: StreamConfig = self.config.clone().into();
         log::info!("Actual output config: {:?}", config);
         let mut last = 0f32;
+        let volume = self.volume.clone();
+        let ac_receiver = self.ac_receiver.clone();
+        let mut audio_control: Option<AudioControl> = None;
 
-        match config.channels {
+        let stream = match config.channels {
             2 => {
                 self.device.build_output_stream(
                     &config,
                     {
                         let mut buffer = Vec::new().into_iter();
                         move |out: &mut [T], _: &cpal::OutputCallbackInfo| {
+
+                            if let Ok(ac) = ac_receiver.try_recv() {
+                                log::info!("Loaded new AudioControl");
+                                audio_control = Some(ac);
+                            }
+
+                            let Some(sample_rec) = &audio_control else {
+                                out.fill(T::from_sample(0.0));
+                                return
+                            };
+
                             for value in out.iter_mut() {
                                 last = match buffer.next() {
                                     Some(val) => val,
                                     None => {
+                                        let start = Instant::now();
                                         loop {
                                             //This jank is because we cant block
                                             if let Ok(samples) = sample_rec.try_get_audio_buffer() {
                                                 buffer = samples.into_iter();
                                                 break;
                                             }
+                                            if Instant::now().duration_since(start) > Duration::from_millis(20) {
+                                                return;
+                                            }
                                         }
                                         buffer.next().unwrap_or(last)
                                     }
                                 };
-                                let volume = (volume.load(std::sync::atomic::Ordering::Relaxed)
+                                let volume = (volume.load(Ordering::Relaxed)
                                     as f32)
                                     / 100.0;
                                 *value = T::from_sample(last * volume);
@@ -95,8 +129,10 @@ impl Audio {
                     None,
                 )
             }
-            _ => panic!("Unable to create audio stream: Unsupported number of channel"),
-        }
-        .unwrap()
+            _ => panic!(),
+        }.unwrap();
+
+        stream
+
     }
 }

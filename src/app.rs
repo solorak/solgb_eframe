@@ -4,7 +4,6 @@ use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, RichText, TextureHandle, TextureOptions};
 use gilrs::Gilrs;
 use serde::{Deserialize, Serialize};
-use solgb::cart::CartType;
 use solgb::gameboy::Gameboy;
 use solgb::gameboy::{self, GameboyType};
 use std::cell::RefCell;
@@ -47,39 +46,41 @@ pub struct TemplateApp {
     started: bool,
     #[serde(skip)]
     events: Events,
-    save_manager_open: bool,
-    volume: Volume,
-    boot_rom_options: BootRomOptions,
     #[serde(skip)]
     inputs: Option<Inputs>,
-    inputs_window_open: bool,
+    volume: Volume,
+    saves_visible: bool,
+    bootrom_options: BootRomOptions,
+    inputs_visible: bool,
     input_state: InputsState,
     input_touch: [bool; 8],
-    show_menu: bool,
-    show_touch: bool,
+    menu_visible: bool,
+    touch_visible: bool,
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
         let events = Events::default();
+        let audio = Audio::new();
+        // let stream = audio.get_stream();
         Self {
             gameboy: None,
             gb_texture: None,
-            audio: Audio::new(),
+            audio,
             stream: None,
             last_save: Instant::now(),
             saves: Saves::new(events.clone()),
             started: false,
             events,
-            save_manager_open: false,
-            volume: Volume::default(),
-            boot_rom_options: BootRomOptions::new(),
             inputs: None,
-            inputs_window_open: false,
+            volume: Volume::default(),
+            saves_visible: false,
+            bootrom_options: BootRomOptions::new(),
+            inputs_visible: false,
             input_state: InputsState::default(),
             input_touch: [false; 8],
-            show_menu: true,
-            show_touch: false,
+            menu_visible: true,
+            touch_visible: false,
         }
     }
 }
@@ -128,28 +129,16 @@ impl TemplateApp {
                     return;
                 };
 
+                log::info!("Loading ROM: {name}");
+
                 if let Some(saves) = &mut self.saves {
+                    // saves.set_rom_info(rom_info.clone());
                     saves.setup_saveram(&name);
-
-                    let mut boot_rom = match (&self.boot_rom_options.gb_type, &rom_type) {
-                        (None, CartType::GB)
-                        | (Some(GameboyType::DMG), CartType::GB)
-                        | (Some(GameboyType::DMG), CartType::Hybrid)
-                        | (Some(GameboyType::DMG), CartType::CGB) => saves.load(&DMG_ROM_NAME),
-                        (None, CartType::CGB)
-                        | (None, CartType::Hybrid)
-                        | (Some(GameboyType::CGB), CartType::GB)
-                        | (Some(GameboyType::CGB), CartType::CGB)
-                        | (Some(GameboyType::CGB), CartType::Hybrid) => saves.load(&CGB_ROM_NAME),
-                    };
-
-                    if !self.boot_rom_options.use_bootrom {
-                        boot_rom = None;
-                    }
+                    let boot_rom = saves.load_bootrom(&rom_type, &self.bootrom_options);
 
                     let mut gameboy = match solgb::gameboy::GameboyBuilder::default()
                         .with_rom(&rom)
-                        .with_model(self.boot_rom_options.gb_type)
+                        .with_model(self.bootrom_options.gb_type)
                         .with_exram(saves.save_ram.clone())
                         .with_boot_rom(boot_rom)
                         .build()
@@ -178,25 +167,21 @@ impl TemplateApp {
 
                     saves.set_rom_info(Some(gameboy.rom_info.clone()));
 
+                    self.audio.set_audio_control(gameboy.audio_control.clone());
                     if let Some(stream) = &self.stream {
-                        if let Err(error) = stream.pause() {
-                            log::warn!("Unable to pause stream: {error}");
+                        if let Err(err) = stream.play() {
+                            log::error!("Unable to start stream: {err}");
                         }
                     }
-
-                    let stream = self.audio.get_stream(gameboy.audio_control.clone());
 
                     match gameboy.start() {
                         Ok(_) => log::info!("Emulation started"),
                         Err(error) => log::error!("Failed to start running emulation: {error}"),
                     };
 
-                    self.gameboy = Some(gameboy);
-                    self.stream = Some(stream);
+                    self.gameboy.replace(gameboy);
 
-                    self.started = false;
-
-                    self.show_menu = false;
+                    self.menu_visible = false;
                 }
             }
             Some(Event::SaveUpload(name, data)) => {
@@ -301,21 +286,21 @@ impl TemplateApp {
             }
         });
         
-        ui.checkbox(&mut self.show_touch, "Show Touch Controls");
+        ui.checkbox(&mut self.touch_visible, "Show Touch Controls");
     }
 
     pub fn display_boot_roms(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(&mut self.boot_rom_options.use_bootrom, "Use Bootrom");
+        ui.checkbox(&mut self.bootrom_options.use_bootrom, "Use Bootrom");
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-            ui.radio_value(&mut self.boot_rom_options.gb_type, None, "Auto");
+            ui.radio_value(&mut self.bootrom_options.gb_type, None, "Auto");
             ui.radio_value(
-                &mut self.boot_rom_options.gb_type,
+                &mut self.bootrom_options.gb_type,
                 Some(GameboyType::DMG),
                 "DMG",
             );
             ui.radio_value(
-                &mut self.boot_rom_options.gb_type,
+                &mut self.bootrom_options.gb_type,
                 Some(GameboyType::CGB),
                 "CGB",
             );
@@ -441,6 +426,7 @@ impl eframe::App for TemplateApp {
                 log::warn!("We are over 1 second behind on rendering frames (was the window inactive?)\nskipping to current frame");
                 while let Ok(_) = gameboy.video_rec.try_recv() {}
             }
+            log::info!("Rendering Frame for: {}", gameboy.rom_info.get_name());
             if let Ok(buffer_u32) = gameboy.video_rec.try_recv() {
                 if let Ok(buffer) = bytemuck::try_cast_slice(&buffer_u32) {
                     let image = Arc::new(ColorImage {
@@ -488,7 +474,7 @@ impl eframe::App for TemplateApp {
             gameboy.input_sender.send(inputs).unwrap();
         }
 
-        if self.show_menu {
+        if self.menu_visible {
             egui::Window::new("control panel")
             .fixed_pos([0.0, 0.0])
             .min_height(ctx.screen_rect().size().y)
@@ -515,7 +501,7 @@ impl eframe::App for TemplateApp {
                 }
 
                 if ui.button(RichText::new("≡").monospace()).clicked() {
-                    self.show_menu = !self.show_menu;
+                    self.menu_visible = !self.menu_visible;
                 }
 
                 egui::widgets::global_dark_light_mode_buttons(ui);
@@ -527,24 +513,33 @@ impl eframe::App for TemplateApp {
                 ctx.set_style(style);
 
                 if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("open")).clicked() {
-                    self.load();
+                    if let None = &self.stream {
+                        self.stream = Some(self.audio.get_stream());
+                    }
+                    if let Some(stream) = &self.stream {
+                        if let Err(err) = stream.pause() {
+                            log::error!("Unable to pause stream: {err}");
+                        }
+                    }
+
+                    self.load()
                 }
 
                 if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("bootroms")).clicked() {
-                    self.boot_rom_options.window_visible = !self.boot_rom_options.window_visible;
+                    self.bootrom_options.window_visible = !self.bootrom_options.window_visible;
                 }
 
-                if self.boot_rom_options.window_visible {
+                if self.bootrom_options.window_visible {
                     ui.add_space(SPACE_BEFORE);
                     self.display_boot_roms(ui);
                     ui.add_space(SPACE_AFTER);
                 }
 
                 if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("saves")).clicked() {
-                    self.save_manager_open = ! self.save_manager_open;
+                    self.saves_visible = ! self.saves_visible;
                 }
 
-                if self.save_manager_open {
+                if self.saves_visible {
                     ui.add_space(SPACE_BEFORE);
                     if let Some(saves) = &mut self.saves {
                         saves.show_save_manager(ui);
@@ -563,10 +558,10 @@ impl eframe::App for TemplateApp {
                 }
 
                 if ui.add_sized(&[ui.available_width(), 0.0], egui::Button::new("input")).clicked() {
-                    self.inputs_window_open = !self.inputs_window_open;
+                    self.inputs_visible = !self.inputs_visible;
                 }
 
-                if self.inputs_window_open {
+                if self.inputs_visible {
                     ui.add_space(SPACE_BEFORE);
                     self.display_inputs(ctx, ui);
                     ui.add_space(SPACE_AFTER);
@@ -585,7 +580,7 @@ impl eframe::App for TemplateApp {
             .resizable(false)
             .show(ctx, |ui| {
                 if ui.button(RichText::new("≡").monospace()).clicked() {
-                    self.show_menu = !self.show_menu;
+                    self.menu_visible = !self.menu_visible;
                 }
             });
         }
@@ -593,26 +588,15 @@ impl eframe::App for TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(gb_texture) = &self.gb_texture {
                 ui.vertical_centered(|ui| {
-                    if !self.started {
-                        if ui.button("start").clicked() {
-                            if let Some(stream) = &self.stream {
-                                if let Err(error) = stream.play() {
-                                    log::warn!("Unable to start stream: {error}");
-                                }
-                            }
-                            self.started = true;
-                        }
-                    } else {
-                        let gameboy = egui::Image::new(ImageSource::Texture(
-                            SizedTexture::from_handle(gb_texture),
-                        ))
-                        .maintain_aspect_ratio(true)
-                        .fit_to_fraction([1.0, 1.0].into());
-                        ui.add(gameboy);
-                    }
+                    let gameboy = egui::Image::new(ImageSource::Texture(
+                        SizedTexture::from_handle(gb_texture),
+                    ))
+                    .maintain_aspect_ratio(true)
+                    .fit_to_fraction([1.0, 1.0].into());
+                    ui.add(gameboy);
                 });
 
-                if self.show_touch {
+                if self.touch_visible {
                     ui.add_space(16.0);
 
                     ui.vertical_centered_justified(|ui| {
