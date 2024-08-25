@@ -1,5 +1,3 @@
-use cpal::traits::StreamTrait;
-use cpal::Stream;
 use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, RichText, TextureHandle, TextureOptions};
 use gilrs::Gilrs;
@@ -37,13 +35,9 @@ pub struct TemplateApp {
     #[serde(skip)]
     audio: Audio,
     #[serde(skip)]
-    stream: Option<Stream>,
-    #[serde(skip)]
     last_save: Instant,
     #[serde(skip)]
     saves: Option<Saves>,
-    #[serde(skip)]
-    started: bool,
     #[serde(skip)]
     events: Events,
     #[serde(skip)]
@@ -67,10 +61,9 @@ impl Default for TemplateApp {
             gameboy: None,
             gb_texture: None,
             audio,
-            stream: None,
+            // stream: None,
             last_save: Instant::now(),
             saves: Saves::new(events.clone()),
-            started: false,
             events,
             inputs: None,
             volume: Volume::default(),
@@ -168,11 +161,7 @@ impl TemplateApp {
                     saves.set_rom_info(Some(gameboy.rom_info.clone()));
 
                     self.audio.set_audio_control(gameboy.audio_control.clone());
-                    if let Some(stream) = &self.stream {
-                        if let Err(err) = stream.play() {
-                            log::error!("Unable to start stream: {err}");
-                        }
-                    }
+                    self.audio.play();
 
                     match gameboy.start() {
                         Ok(_) => log::info!("Emulation started"),
@@ -512,15 +501,7 @@ impl eframe::App for TemplateApp {
                         .add_sized([ui.available_width(), 0.0], egui::Button::new("open"))
                         .clicked()
                     {
-                        if self.stream.is_none() {
-                            self.stream = Some(self.audio.get_stream());
-                        }
-                        if let Some(stream) = &self.stream {
-                            if let Err(err) = stream.pause() {
-                                log::error!("Unable to pause stream: {err}");
-                            }
-                        }
-
+                        self.audio.pause();
                         self.load()
                     }
 
@@ -743,8 +724,6 @@ impl eframe::App for TemplateApp {
     fn persist_egui_memory(&self) -> bool {
         true
     }
-
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, _raw_input: &mut egui::RawInput) {}
 }
 
 fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {

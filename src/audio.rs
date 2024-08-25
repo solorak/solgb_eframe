@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use cpal::{
-    traits::{DeviceTrait, HostTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait},
     Device, FromSample, SizedSample, Stream, StreamConfig, SupportedStreamConfig,
 };
 use crossbeam_channel::{Receiver, Sender};
@@ -17,6 +17,7 @@ use web_time::{Duration, Instant};
 pub struct Audio {
     pub device: Device,
     pub config: SupportedStreamConfig,
+    pub stream: Option<Stream>,
     volume: Arc<AtomicU8>,
     ac_receiver: Receiver<AudioControl>,
     ac_sender: Sender<AudioControl>,
@@ -33,17 +34,20 @@ impl Audio {
         let volume = Arc::new(AtomicU8::new(0));
         let (ac_sender, ac_receiver) = crossbeam_channel::unbounded();
 
-        Self {
+        let mut audio = Self {
             device,
             config,
+            stream: None,
             volume,
             ac_receiver,
             ac_sender,
-        }
+        };
+        audio.setup_stream();
+        audio
     }
 
-    pub fn get_stream(&self) -> Stream {
-        match self.config.sample_format() {
+    fn setup_stream(&mut self) {
+        self.stream = match self.config.sample_format() {
             cpal::SampleFormat::I8 => self.setup::<i8>(),
             cpal::SampleFormat::I16 => self.setup::<i16>(),
             cpal::SampleFormat::I32 => self.setup::<i32>(),
@@ -55,6 +59,28 @@ impl Audio {
             cpal::SampleFormat::F32 => self.setup::<f32>(),
             cpal::SampleFormat::F64 => self.setup::<f64>(),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
+        };
+    }
+
+    pub fn play(&self) {
+        let Some(stream) = &self.stream else {
+            log::error!("Failed to play stream: Stream is not setup (bad device/config?)");
+            return;
+        };
+
+        if let Err(err) = stream.play() {
+            log::error!("Failed to play stream: {err}");
+        }
+    }
+
+    pub fn pause(&self) {
+        let Some(stream) = &self.stream else {
+            log::error!("Failed to pause stream: Stream is not setup (bad device/config?)");
+            return;
+        };
+
+        if let Err(err) = stream.pause() {
+            log::error!("Failed to pause stream: {err}");
         }
     }
 
@@ -71,7 +97,7 @@ impl Audio {
         self.volume.store(volume, Ordering::Relaxed)
     }
 
-    fn setup<T>(&self) -> Stream
+    fn setup<T>(&self) -> Option<Stream>
     where
         T: SizedSample + FromSample<f32>,
     {
@@ -132,6 +158,6 @@ impl Audio {
             }
             _ => panic!(),
         }
-        .unwrap()
+        .ok()
     }
 }
