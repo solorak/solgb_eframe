@@ -5,6 +5,6 @@
 # to the user in the error, instead of "error: invalid channel name '[toolchain]'".
 
 [toolchain]
-channel = "nightly-x86_64-pc-windows-msvc"
-components = [ "rustfmt", "clippy" ]
+channel = "nightly-2024-07-24"
+profile = "default"
 targets = [ "wasm32-unknown-unknown" ]
