@@ -27,8 +27,9 @@ fn main() -> eframe::Result {
 // When compiling to web using trunk:
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    // Redirect `log` message to `console.log` and friends:
+    use wasm_bindgen::JsCast;
 
+    // Redirect `log` message to `console.log` and friends:
     if cfg!(debug_assertions) {
         eframe::WebLogger::init(log::LevelFilter::Trace).ok();
     } else {
@@ -38,9 +39,17 @@ fn main() {
     let web_options = eframe::WebOptions::default();
 
     wasm_bindgen_futures::spawn_local(async {
+        let canvas = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("the_canvas_id"))
+            .unwrap();
+        let canvas: web_sys::HtmlCanvasElement = canvas
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .map_err(|_| ())
+            .unwrap();
         let start_result = eframe::WebRunner::new()
             .start(
-                "the_canvas_id",
+                canvas,
                 web_options,
                 Box::new(|cc| Ok(Box::new(solgb_eframe::TemplateApp::new(cc)))),
             )
