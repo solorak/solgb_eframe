@@ -36,8 +36,8 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with: 
           ssh-private-key: ${{ secrets.SOLGB_KEY }}
-      - name: clean
-        run: cargo clean
+      - name: update
+        run: cargo update
       - name: cargo
         run: cargo check
       # - uses: actions-rs/toolchain@v1
