@@ -275,7 +275,7 @@ impl TemplateApp {
             }
         });
 
-        ui.checkbox(&mut self.touch_visible, "Show Touch Controls");
+        ui.checkbox(&mut self.touch_visible, "Show Touch Controls (WIP)");
     }
 
     pub fn display_boot_roms(&mut self, ui: &mut egui::Ui) {
@@ -462,7 +462,7 @@ impl eframe::App for TemplateApp {
         if self.menu_visible {
             egui::Window::new("control panel")
                 .fixed_pos([0.0, 0.0])
-                .min_height(ctx.screen_rect().size().y)
+                .min_height(ctx.available_rect().size().y)
                 .min_width(400.0)
                 .constrain(true)
                 .title_bar(false)
@@ -472,7 +472,7 @@ impl eframe::App for TemplateApp {
                     const SPACE_BEFORE: f32 = 2.0;
                     const SPACE_AFTER: f32 = 10.0;
                     // ui.set_max_width(285.0);
-                    ui.set_min_height(ctx.screen_rect().size().y);
+                    ui.set_min_height(ctx.available_rect().size().y);
 
                     // NOTE: no File->Quit on web pages!
                     let is_web = cfg!(target_arch = "wasm32");
@@ -560,6 +560,7 @@ impl eframe::App for TemplateApp {
                     }
 
                     ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                        ui.label("");
                         powered_by_egui_and_eframe(ui);
                         egui::warn_if_debug_build(ui);
                     });

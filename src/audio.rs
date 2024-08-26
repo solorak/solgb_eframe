@@ -133,7 +133,7 @@ impl Audio {
                                     None => {
                                         let start = Instant::now();
                                         loop {
-                                            //This jank is because we cant block
+                                            //This jank is because we can't block
                                             if let Ok(samples) = sample_rec.try_get_audio_buffer() {
                                                 buffer = samples.into_iter();
                                                 break;
