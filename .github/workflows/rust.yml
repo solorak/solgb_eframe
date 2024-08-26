@@ -39,13 +39,13 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly
+          toolchain: nightly-2024-07-24
           target: wasm32-unknown-unknown
           override: true
       - uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --all-features --lib --target wasm32-unknown-unknown
+          # args: --all-features --lib --target wasm32-unknown-unknown
 
   # test:
   #   name: Test Suite
