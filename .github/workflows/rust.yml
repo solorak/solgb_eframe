@@ -39,7 +39,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: default
-          toolchain: nightly-2024-07-24
+          toolchain: nightly-2024-07-24-wasm32-unknown-unknown
           target: wasm32-unknown-unknown
           override: true
       - uses: actions-rs/cargo@v1
