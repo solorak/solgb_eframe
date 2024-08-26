@@ -36,10 +36,12 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with: 
           ssh-private-key: ${{ secrets.SOLGB_KEY }}
+      - name: cargo
+        run: cargo check
       # - uses: actions-rs/toolchain@v1
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
+      # - uses: actions-rs/cargo@v1
+      #   with:
+      #     command: check
           # args: --all-features --lib --target wasm32-unknown-unknown
 
   # test:
