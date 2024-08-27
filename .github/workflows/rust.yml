@@ -113,7 +113,7 @@ jobs:
       #     target: wasm32-unknown-unknown
       #     override: true
       - name: Build
-        run: trunk build
+        run: /home/runner/.cargo/bin/trunk build
 
   # build:
   #   runs-on: ${{ matrix.os }}
