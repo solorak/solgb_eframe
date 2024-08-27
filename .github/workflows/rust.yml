@@ -112,8 +112,10 @@ jobs:
       #     toolchain: nightly-2024-07-24
       #     target: wasm32-unknown-unknown
       #     override: true
+      - name: Download and install Trunk binary
+        run: wget -qO- https://github.com/thedodd/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
       - name: Build
-        run: /home/runner/.cargo/bin/trunk build
+        run: ./trunk build
 
   # build:
   #   runs-on: ${{ matrix.os }}
