@@ -100,7 +100,7 @@ jobs:
 
   trunk:
     name: trunk
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: webfactory/ssh-agent@v0.9.0
@@ -108,14 +108,14 @@ jobs:
           ssh-private-key: ${{ secrets.SOLGB_KEY }}
       # - uses: actions-rs/toolchain@v1
       #   with:
-      #     profile: minimal
-      #     toolchain: nightly-2024-07-24
+      #     profile: default
+      #     toolchain: nightly
       #     target: wasm32-unknown-unknown
       #     override: true
-      - name: Download and install Trunk binary
-        run: wget -qO- https://github.com/thedodd/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
+      # - name: Download and install Trunk binary
+      #   run: wget -qO- https://github.com/thedodd/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
       - name: Build
-        run: ./trunk build
+        run: trunk build
 
   # build:
   #   runs-on: ${{ matrix.os }}

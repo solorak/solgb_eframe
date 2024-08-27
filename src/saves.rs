@@ -107,20 +107,6 @@ impl Saves {
         STANDARD.decode(encoded).ok()
     }
 
-    pub fn download(&mut self, name: &str) -> Result<(), String> {
-        let item = match self.storage.get(name) {
-            Ok(Some(item)) => item,
-            _ => {
-                return Err(format!(
-                    "Unable to retrive item or item with name: {name} does not exist"
-                ))
-            }
-        };
-
-        Saves::download_helper(&format!("{name}.sav"), &item)?;
-        Ok(())
-    }
-
     pub fn download_all(&mut self) -> Result<(), String> {
         let cursor = io::Cursor::new(Vec::new());
         let mut zip = zip::ZipWriter::new(cursor);
