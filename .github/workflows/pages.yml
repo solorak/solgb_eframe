@@ -19,12 +19,15 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4 # repo checkout
-      - name: Setup toolchain for wasm
-        run: |
-          rustup update nightly
-          rustup default nightly
-          rustup set profile default
-          rustup target add wasm32-unknown-unknown
+      - uses: webfactory/ssh-agent@v0.9.0
+        with: 
+          ssh-private-key: ${{ secrets.SOLGB_KEY }}
+      # - name: Setup toolchain for wasm
+      #   run: |
+      #     rustup update nightly
+      #     rustup default nightly
+      #     rustup set profile default
+      #     rustup target add wasm32-unknown-unknown
       - name: Rust Cache # cache the rust build artefacts
         uses: Swatinem/rust-cache@v2
       - name: Download and install Trunk binary
