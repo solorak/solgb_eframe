@@ -144,6 +144,8 @@ impl TemplateApp {
                         }
                     };
 
+                    self.audio = Audio::new();
+
                     self.audio.set_volume(self.volume.master as u8);
                     gameboy
                         .audio_control
@@ -842,9 +844,24 @@ impl BootRomOptions {
             gb_type: None,
             window_visible: false,
             palettes: Palettes {
-                bg: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
-                spr1: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
-                spr2: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                bg: [
+                    [0xE6, 0xD6, 0x9C],
+                    [0xB4, 0xA5, 0x6A],
+                    [0x7B, 0x71, 0x62],
+                    [0x39, 0x38, 0x29],
+                ],
+                spr1: [
+                    [0xE6, 0xD6, 0x9C],
+                    [0xB4, 0xA5, 0x6A],
+                    [0x7B, 0x71, 0x62],
+                    [0x39, 0x38, 0x29],
+                ],
+                spr2: [
+                    [0xE6, 0xD6, 0x9C],
+                    [0xB4, 0xA5, 0x6A],
+                    [0x7B, 0x71, 0x62],
+                    [0x39, 0x38, 0x29],
+                ],
             },
         }
     }
