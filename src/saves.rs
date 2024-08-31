@@ -1,8 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use solgb::{
-    cart::{CartType, RomInfo},
-    gameboy::GameboyType,
-};
+use solgb::{CartType, GameboyType, RomInfo};
 use std::{
     collections::BTreeMap,
     io::{self, Write},
@@ -80,13 +77,13 @@ impl Saves {
         bootrom_options: &BootRomOptions,
     ) -> Option<Vec<u8>> {
         let mut boot_rom = match (&bootrom_options.gb_type, &rom_type) {
-            (None, CartType::GB)
-            | (Some(GameboyType::DMG), CartType::GB)
+            (None, CartType::DMG)
+            | (Some(GameboyType::DMG), CartType::DMG)
             | (Some(GameboyType::DMG), CartType::Hybrid)
             | (Some(GameboyType::DMG), CartType::CGB) => self.load(DMG_ROM_NAME),
             (None, CartType::CGB)
             | (None, CartType::Hybrid)
-            | (Some(GameboyType::CGB), CartType::GB)
+            | (Some(GameboyType::CGB), CartType::DMG)
             | (Some(GameboyType::CGB), CartType::CGB)
             | (Some(GameboyType::CGB), CartType::Hybrid) => self.load(CGB_ROM_NAME),
         };

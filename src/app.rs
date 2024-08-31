@@ -2,8 +2,8 @@ use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, RichText, TextureHandle, TextureOptions};
 use gilrs::Gilrs;
 use serde::{Deserialize, Serialize};
-use solgb::gameboy::Gameboy;
-use solgb::gameboy::{self, GameboyType};
+use solgb::{self, Channel, GameboyType, PaletteColors};
+use solgb::{Gameboy, RomInfo};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::ops::RangeInclusive;
@@ -18,8 +18,8 @@ use crate::audio::Audio;
 use crate::input::{Inputs, InputsState};
 use crate::saves::Saves;
 
-pub const WIDTH: usize = gameboy::SCREEN_WIDTH as usize;
-pub const HEIGHT: usize = gameboy::SCREEN_HEIGHT as usize;
+pub const WIDTH: usize = solgb::SCREEN_WIDTH as usize;
+pub const HEIGHT: usize = solgb::SCREEN_HEIGHT as usize;
 
 pub const DMG_ROM_NAME: &str = "_DMGBOOTROM";
 pub const CGB_ROM_NAME: &str = "_CGBBOOTROM";
@@ -115,7 +115,7 @@ impl TemplateApp {
     fn handle_custom_events(&mut self) {
         match self.events.get_next() {
             Some(Event::OpenRom(rom)) => {
-                let (name, rom_type) = if let Ok(rom_info) = solgb::cart::RomInfo::new(&rom) {
+                let (name, rom_type) = if let Ok(rom_info) = RomInfo::new(&rom) {
                     (rom_info.get_name(), *rom_info.get_type())
                 } else {
                     log::error!("ROM does not appear to be a gameboy game");
@@ -129,7 +129,7 @@ impl TemplateApp {
                     saves.setup_saveram(&name);
                     let boot_rom = saves.load_bootrom(&rom_type, &self.bootrom_options);
 
-                    let mut gameboy = match solgb::gameboy::GameboyBuilder::default()
+                    let mut gameboy = match solgb::GameboyBuilder::default()
                         .with_rom(&rom)
                         .with_model(self.bootrom_options.gb_type)
                         .with_exram(saves.save_ram.clone())
@@ -147,16 +147,16 @@ impl TemplateApp {
                     self.audio.set_volume(self.volume.master as u8);
                     gameboy
                         .audio_control
-                        .set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32);
+                        .set_volume(Channel::Square1, self.volume.square_1 as f32);
                     gameboy
                         .audio_control
-                        .set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32);
+                        .set_volume(Channel::Square2, self.volume.square_2 as f32);
                     gameboy
                         .audio_control
-                        .set_volume(gameboy::Channel::Wave, self.volume.wave as f32);
+                        .set_volume(Channel::Wave, self.volume.wave as f32);
                     gameboy
                         .audio_control
-                        .set_volume(gameboy::Channel::Noise, self.volume.noise as f32);
+                        .set_volume(Channel::Noise, self.volume.noise as f32);
 
                     saves.set_rom_info(Some(gameboy.rom_info.clone()));
 
@@ -315,6 +315,66 @@ impl TemplateApp {
                 );
             }
         });
+
+        ui.add_space(10.0);
+
+        let mut changed = false;
+        let palettes = &mut self.bootrom_options.palettes;
+
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            ui.monospace("Background:     ");
+            changed |= ui.color_edit_button_srgb(&mut palettes.bg[0]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.bg[1]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.bg[2]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.bg[3]).changed();
+        });
+
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            ui.monospace("Sprite Layer 1: ");
+            changed |= ui.color_edit_button_srgb(&mut palettes.spr1[0]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.spr1[1]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.spr1[2]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.spr1[3]).changed();
+        });
+
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            ui.monospace("Sprite Layer 2: ");
+            changed |= ui.color_edit_button_srgb(&mut palettes.spr2[0]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.spr2[1]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.spr2[2]).changed()
+                | ui.color_edit_button_srgb(&mut palettes.spr2[3]).changed();
+        });
+
+        if ui.button("reset").clicked() {
+            palettes.bg = [
+                [0xE6, 0xD6, 0x9C],
+                [0xB4, 0xA5, 0x6A],
+                [0x7B, 0x71, 0x62],
+                [0x39, 0x38, 0x29],
+            ];
+            palettes.spr1 = [
+                [0xE6, 0xD6, 0x9C],
+                [0xB4, 0xA5, 0x6A],
+                [0x7B, 0x71, 0x62],
+                [0x39, 0x38, 0x29],
+            ];
+            palettes.spr2 = [
+                [0xE6, 0xD6, 0x9C],
+                [0xB4, 0xA5, 0x6A],
+                [0x7B, 0x71, 0x62],
+                [0x39, 0x38, 0x29],
+            ];
+            changed = true;
+        }
+
+        if changed {
+            if let Some(gameboy) = &mut self.gameboy {
+                let bg = convert_palette(&palettes.bg);
+                let spr1 = convert_palette(&palettes.spr1);
+                let spr2 = convert_palette(&palettes.spr2);
+                gameboy.set_palettes(PaletteColors::new((bg, spr1, spr2)))
+            }
+        }
     }
 
     fn display_volume(&mut self, ui: &mut egui::Ui) {
@@ -332,7 +392,7 @@ impl TemplateApp {
             if let Some(gameboy) = &self.gameboy {
                 gameboy
                     .audio_control
-                    .set_volume(gameboy::Channel::Square1, self.volume.square_1 as f32)
+                    .set_volume(Channel::Square1, self.volume.square_1 as f32)
             }
         };
         if ui
@@ -342,7 +402,7 @@ impl TemplateApp {
             if let Some(gameboy) = &self.gameboy {
                 gameboy
                     .audio_control
-                    .set_volume(gameboy::Channel::Square2, self.volume.square_2 as f32)
+                    .set_volume(Channel::Square2, self.volume.square_2 as f32)
             }
         };
         if ui
@@ -352,7 +412,7 @@ impl TemplateApp {
             if let Some(gameboy) = &self.gameboy {
                 gameboy
                     .audio_control
-                    .set_volume(gameboy::Channel::Wave, self.volume.wave as f32)
+                    .set_volume(Channel::Wave, self.volume.wave as f32)
             }
         };
         if ui
@@ -362,7 +422,7 @@ impl TemplateApp {
             if let Some(gameboy) = &self.gameboy {
                 gameboy
                     .audio_control
-                    .set_volume(gameboy::Channel::Noise, self.volume.noise as f32)
+                    .set_volume(Channel::Noise, self.volume.noise as f32)
             }
         };
     }
@@ -408,7 +468,9 @@ impl eframe::App for TemplateApp {
 
         if let Some(gameboy) = &mut self.gameboy {
             if gameboy.video_rec.len() > 60 {
-                log::warn!("We are over 1 second behind on rendering frames (was the window inactive?)\nskipping to current frame");
+                log::warn!(
+                    "We are over 1 second behind on rendering frames.\nskipping to current frame"
+                );
                 while gameboy.video_rec.try_recv().is_ok() {}
             }
             log::info!("Rendering Frame for: {}", gameboy.rom_info.get_name());
@@ -770,6 +832,7 @@ pub struct BootRomOptions {
     pub use_bootrom: bool,
     pub gb_type: Option<GameboyType>,
     pub window_visible: bool,
+    pub palettes: Palettes,
 }
 
 impl BootRomOptions {
@@ -778,8 +841,20 @@ impl BootRomOptions {
             use_bootrom: false,
             gb_type: None,
             window_visible: false,
+            palettes: Palettes {
+                bg: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                spr1: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                spr2: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
+            },
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Palettes {
+    pub bg: [[u8; 3]; 4],
+    pub spr1: [[u8; 3]; 4],
+    pub spr2: [[u8; 3]; 4],
 }
 
 #[derive(Clone)]
@@ -901,4 +976,13 @@ fn show_canvas() {
             canvas.set_attribute("style", "outline: none;").unwrap();
         }
     }
+}
+
+fn convert_palette(palette: &[[u8; 3]; 4]) -> [u32; 4] {
+    [
+        u32::from_le_bytes([palette[0][2], palette[0][1], palette[0][0], 0xFF]),
+        u32::from_le_bytes([palette[1][2], palette[1][1], palette[1][0], 0xFF]),
+        u32::from_le_bytes([palette[2][2], palette[2][1], palette[2][0], 0xFF]),
+        u32::from_le_bytes([palette[3][2], palette[3][1], palette[3][0], 0xFF]),
+    ]
 }

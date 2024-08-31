@@ -8,7 +8,7 @@ use cpal::{
     Device, FromSample, SizedSample, Stream, StreamConfig, SupportedStreamConfig,
 };
 use crossbeam_channel::{Receiver, Sender};
-use solgb::gameboy::AudioControl;
+use solgb::AudioControl;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
