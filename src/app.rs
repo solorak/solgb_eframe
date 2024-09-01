@@ -16,6 +16,7 @@ use web_time::Instant;
 
 use crate::audio::Audio;
 use crate::input::{Inputs, InputsState};
+use crate::palettes::PALETTES;
 use crate::saves::Saves;
 
 pub const WIDTH: usize = solgb::SCREEN_WIDTH as usize;
@@ -45,6 +46,7 @@ pub struct TemplateApp {
     volume: Volume,
     saves_visible: bool,
     bootrom_options: BootRomOptions,
+    palettes: Palettes,
     inputs_visible: bool,
     input_state: InputsState,
     input_touch: [bool; 8],
@@ -69,6 +71,7 @@ impl Default for TemplateApp {
             volume: Volume::default(),
             saves_visible: false,
             bootrom_options: BootRomOptions::new(),
+            palettes: Palettes::new(),
             inputs_visible: false,
             input_state: InputsState::default(),
             input_touch: [false; 8],
@@ -317,56 +320,39 @@ impl TemplateApp {
                 );
             }
         });
+    }
 
-        ui.add_space(10.0);
-
+    fn display_palettes(&mut self, ui: &mut egui::Ui) {
         let mut changed = false;
-        let palettes = &mut self.bootrom_options.palettes;
+        let palettes = &mut self.palettes;
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
             ui.monospace("Background:     ");
-            changed |= ui.color_edit_button_srgb(&mut palettes.bg[0]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.bg[1]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.bg[2]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.bg[3]).changed();
+            for palette in &mut palettes.bg {
+                changed |= ui.color_edit_button_srgb(palette).changed()
+            }
         });
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
             ui.monospace("Sprite Layer 1: ");
-            changed |= ui.color_edit_button_srgb(&mut palettes.spr1[0]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.spr1[1]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.spr1[2]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.spr1[3]).changed();
+            for palette in &mut palettes.spr1 {
+                changed |= ui.color_edit_button_srgb(palette).changed()
+            }
         });
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
             ui.monospace("Sprite Layer 2: ");
-            changed |= ui.color_edit_button_srgb(&mut palettes.spr2[0]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.spr2[1]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.spr2[2]).changed()
-                | ui.color_edit_button_srgb(&mut palettes.spr2[3]).changed();
+            for palette in &mut palettes.spr2 {
+                changed |= ui.color_edit_button_srgb(palette).changed()
+            }
         });
 
-        if ui.button("reset").clicked() {
-            palettes.bg = [
-                [0xE6, 0xD6, 0x9C],
-                [0xB4, 0xA5, 0x6A],
-                [0x7B, 0x71, 0x62],
-                [0x39, 0x38, 0x29],
-            ];
-            palettes.spr1 = [
-                [0xE6, 0xD6, 0x9C],
-                [0xB4, 0xA5, 0x6A],
-                [0x7B, 0x71, 0x62],
-                [0x39, 0x38, 0x29],
-            ];
-            palettes.spr2 = [
-                [0xE6, 0xD6, 0x9C],
-                [0xB4, 0xA5, 0x6A],
-                [0x7B, 0x71, 0x62],
-                [0x39, 0x38, 0x29],
-            ];
-            changed = true;
+        ui.monospace("Default Palettes");
+
+        for (name, palette) in PALETTES {
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+                changed |= palettes.draw_palette(ui, name, &palette);
+            });
         }
 
         if changed {
@@ -579,6 +565,22 @@ impl eframe::App for TemplateApp {
                     if self.bootrom_options.window_visible {
                         ui.add_space(SPACE_BEFORE);
                         self.display_boot_roms(ui);
+                        ui.add_space(SPACE_AFTER);
+                    }
+
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), 0.0],
+                            egui::Button::new("dmg palettes"),
+                        )
+                        .clicked()
+                    {
+                        self.palettes.window_visible = !self.palettes.window_visible;
+                    }
+
+                    if self.palettes.window_visible {
+                        ui.add_space(SPACE_BEFORE);
+                        self.display_palettes(ui);
                         ui.add_space(SPACE_AFTER);
                     }
 
@@ -834,7 +836,6 @@ pub struct BootRomOptions {
     pub use_bootrom: bool,
     pub gb_type: Option<GameboyType>,
     pub window_visible: bool,
-    pub palettes: Palettes,
 }
 
 impl BootRomOptions {
@@ -843,26 +844,6 @@ impl BootRomOptions {
             use_bootrom: false,
             gb_type: None,
             window_visible: false,
-            palettes: Palettes {
-                bg: [
-                    [0xE6, 0xD6, 0x9C],
-                    [0xB4, 0xA5, 0x6A],
-                    [0x7B, 0x71, 0x62],
-                    [0x39, 0x38, 0x29],
-                ],
-                spr1: [
-                    [0xE6, 0xD6, 0x9C],
-                    [0xB4, 0xA5, 0x6A],
-                    [0x7B, 0x71, 0x62],
-                    [0x39, 0x38, 0x29],
-                ],
-                spr2: [
-                    [0xE6, 0xD6, 0x9C],
-                    [0xB4, 0xA5, 0x6A],
-                    [0x7B, 0x71, 0x62],
-                    [0x39, 0x38, 0x29],
-                ],
-            },
         }
     }
 }
@@ -872,6 +853,47 @@ pub struct Palettes {
     pub bg: [[u8; 3]; 4],
     pub spr1: [[u8; 3]; 4],
     pub spr2: [[u8; 3]; 4],
+    pub window_visible: bool,
+}
+
+impl Palettes {
+    pub fn new() -> Self {
+        Palettes {
+            bg: [
+                [0xE6, 0xD6, 0x9C],
+                [0xB4, 0xA5, 0x6A],
+                [0x7B, 0x71, 0x62],
+                [0x39, 0x38, 0x29],
+            ],
+            spr1: [
+                [0xE6, 0xD6, 0x9C],
+                [0xB4, 0xA5, 0x6A],
+                [0x7B, 0x71, 0x62],
+                [0x39, 0x38, 0x29],
+            ],
+            spr2: [
+                [0xE6, 0xD6, 0x9C],
+                [0xB4, 0xA5, 0x6A],
+                [0x7B, 0x71, 0x62],
+                [0x39, 0x38, 0x29],
+            ],
+            window_visible: false,
+        }
+    }
+
+    fn draw_palette(&mut self, ui: &mut egui::Ui, name: &str, palette: &[[u8; 3]; 4]) -> bool {
+        let mut changed = false;
+        if ui.monospace(format!("{name: <16}")).clicked() {
+            self.bg = *palette;
+            self.spr1 = *palette;
+            self.spr2 = *palette;
+            changed = true;
+        }
+        for colors in palette {
+            ui.colored_label(Color32::from_rgb(colors[0], colors[1], colors[2]), "⏹");
+        }
+        changed
+    }
 }
 
 #[derive(Clone)]
