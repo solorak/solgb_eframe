@@ -1,3 +1,4 @@
+use crossbeam_channel::Sender;
 use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, RichText, TextureHandle, TextureOptions};
 use gilrs::Gilrs;
@@ -12,11 +13,13 @@ use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
+use wasm_thread as thread;
+#[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
 use crate::audio::Audio;
 use crate::input::{Inputs, InputsState};
-use crate::palettes::PALETTES;
+use crate::palettes::{Palettes, PALETTES};
 use crate::saves::Saves;
 
 pub const WIDTH: usize = solgb::SCREEN_WIDTH as usize;
@@ -128,15 +131,18 @@ impl TemplateApp {
                 log::info!("Loading ROM: {name}");
 
                 if let Some(saves) = &mut self.saves {
-                    // saves.set_rom_info(rom_info.clone());
                     saves.setup_saveram(&name);
                     let boot_rom = saves.load_bootrom(&rom_type, &self.bootrom_options);
+
+                    let pal = self.palettes.get_u32_palette();
+                    let palette = PaletteColors::new((pal[0], pal[1], pal[2]));
 
                     let mut gameboy = match solgb::GameboyBuilder::default()
                         .with_rom(&rom)
                         .with_model(self.bootrom_options.gb_type)
                         .with_exram(saves.save_ram.clone())
                         .with_boot_rom(boot_rom)
+                        .with_palette(Some(palette))
                         .build()
                     {
                         Ok(gameboy) => gameboy,
@@ -357,10 +363,8 @@ impl TemplateApp {
 
         if changed {
             if let Some(gameboy) = &mut self.gameboy {
-                let bg = convert_palette(&palettes.bg);
-                let spr1 = convert_palette(&palettes.spr1);
-                let spr2 = convert_palette(&palettes.spr2);
-                gameboy.set_palettes(PaletteColors::new((bg, spr1, spr2)))
+                let pal = palettes.get_u32_palette();
+                gameboy.set_palettes(PaletteColors::new((pal[0], pal[1], pal[2])))
             }
         }
     }
@@ -506,7 +510,7 @@ impl eframe::App for TemplateApp {
                     *input = true;
                 }
             }
-            gameboy.input_sender.send(inputs).unwrap();
+            gameboy.input_sender.try_send(inputs).unwrap();
         }
 
         if self.menu_visible {
@@ -848,54 +852,6 @@ impl BootRomOptions {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct Palettes {
-    pub bg: [[u8; 3]; 4],
-    pub spr1: [[u8; 3]; 4],
-    pub spr2: [[u8; 3]; 4],
-    pub window_visible: bool,
-}
-
-impl Palettes {
-    pub fn new() -> Self {
-        Palettes {
-            bg: [
-                [0xE6, 0xD6, 0x9C],
-                [0xB4, 0xA5, 0x6A],
-                [0x7B, 0x71, 0x62],
-                [0x39, 0x38, 0x29],
-            ],
-            spr1: [
-                [0xE6, 0xD6, 0x9C],
-                [0xB4, 0xA5, 0x6A],
-                [0x7B, 0x71, 0x62],
-                [0x39, 0x38, 0x29],
-            ],
-            spr2: [
-                [0xE6, 0xD6, 0x9C],
-                [0xB4, 0xA5, 0x6A],
-                [0x7B, 0x71, 0x62],
-                [0x39, 0x38, 0x29],
-            ],
-            window_visible: false,
-        }
-    }
-
-    fn draw_palette(&mut self, ui: &mut egui::Ui, name: &str, palette: &[[u8; 3]; 4]) -> bool {
-        let mut changed = false;
-        if ui.monospace(format!("{name: <16}")).clicked() {
-            self.bg = *palette;
-            self.spr1 = *palette;
-            self.spr2 = *palette;
-            changed = true;
-        }
-        for colors in palette {
-            ui.colored_label(Color32::from_rgb(colors[0], colors[1], colors[2]), "⏹");
-        }
-        changed
-    }
-}
-
 #[derive(Clone)]
 pub struct Events(Rc<RefCell<VecDeque<Event>>>);
 
@@ -1015,13 +971,4 @@ fn show_canvas() {
             canvas.set_attribute("style", "outline: none;").unwrap();
         }
     }
-}
-
-fn convert_palette(palette: &[[u8; 3]; 4]) -> [u32; 4] {
-    [
-        u32::from_le_bytes([palette[0][2], palette[0][1], palette[0][0], 0xFF]),
-        u32::from_le_bytes([palette[1][2], palette[1][1], palette[1][0], 0xFF]),
-        u32::from_le_bytes([palette[2][2], palette[2][1], palette[2][0], 0xFF]),
-        u32::from_le_bytes([palette[3][2], palette[3][1], palette[3][0], 0xFF]),
-    ]
 }

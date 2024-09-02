@@ -22,4 +22,4 @@ rustflags = [
 build-std = ["panic_abort", "std"]
 ```
 * Setting COEP/COOP headers (Thanks https://github.com/gzuidhof/coi-serviceworker)
-* No atomic waits on the main thread. I *think* this is the case now, but I had previosuly been sending some data to the GB and channel 'send' (on unbounded channels) and 'try_send' can both cause an atmoic waits under the right circumstances.
+* No atomic waits on the main thread. This means that updating the DMG palettes or inputs can occasionally crash the app. 
