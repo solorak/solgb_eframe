@@ -1,4 +1,3 @@
-use crossbeam_channel::Sender;
 use egui::load::SizedTexture;
 use egui::{Color32, ColorImage, ImageData, ImageSource, RichText, TextureHandle, TextureOptions};
 use gilrs::Gilrs;
@@ -12,8 +11,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use wasm_thread as thread;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
@@ -328,47 +325,6 @@ impl TemplateApp {
         });
     }
 
-    fn display_palettes(&mut self, ui: &mut egui::Ui) {
-        let mut changed = false;
-        let palettes = &mut self.palettes;
-
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-            ui.monospace("Background:     ");
-            for palette in &mut palettes.bg {
-                changed |= ui.color_edit_button_srgb(palette).changed()
-            }
-        });
-
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-            ui.monospace("Sprite Layer 1: ");
-            for palette in &mut palettes.spr1 {
-                changed |= ui.color_edit_button_srgb(palette).changed()
-            }
-        });
-
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-            ui.monospace("Sprite Layer 2: ");
-            for palette in &mut palettes.spr2 {
-                changed |= ui.color_edit_button_srgb(palette).changed()
-            }
-        });
-
-        ui.monospace("Default Palettes");
-
-        for (name, palette) in PALETTES {
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-                changed |= palettes.draw_palette(ui, name, &palette);
-            });
-        }
-
-        if changed {
-            if let Some(gameboy) = &mut self.gameboy {
-                let pal = palettes.get_u32_palette();
-                gameboy.set_palettes(PaletteColors::new((pal[0], pal[1], pal[2])))
-            }
-        }
-    }
-
     fn display_volume(&mut self, ui: &mut egui::Ui) {
         const VOLUME_RANGE: RangeInclusive<u32> = 0..=100;
         if ui
@@ -584,7 +540,12 @@ impl eframe::App for TemplateApp {
 
                     if self.palettes.window_visible {
                         ui.add_space(SPACE_BEFORE);
-                        self.display_palettes(ui);
+                        if self.palettes.display_palettes(ui) {
+                            if let Some(gameboy) = &mut self.gameboy {
+                                let pal = self.palettes.get_u32_palette();
+                                gameboy.set_palettes(PaletteColors::new((pal[0], pal[1], pal[2])))
+                            }
+                        }
                         ui.add_space(SPACE_AFTER);
                     }
 
