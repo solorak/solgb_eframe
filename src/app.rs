@@ -16,7 +16,7 @@ use web_time::Instant;
 
 use crate::audio::Audio;
 use crate::input::{Inputs, InputsState};
-use crate::palettes::{Palettes, PALETTES};
+use crate::palettes::Palettes;
 use crate::saves::Saves;
 
 pub const WIDTH: usize = solgb::SCREEN_WIDTH as usize;
