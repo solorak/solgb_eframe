@@ -17,10 +17,11 @@ use web_time::{Duration, Instant};
 pub struct Audio {
     pub device: Device,
     pub config: SupportedStreamConfig,
-    pub stream: Option<Stream>,
+    stream: Option<Stream>,
     volume: Arc<AtomicU8>,
     ac_receiver: Receiver<AudioControl>,
     ac_sender: Sender<AudioControl>,
+    audio_control: Option<AudioControl>,
 }
 
 impl Audio {
@@ -41,6 +42,7 @@ impl Audio {
             volume,
             ac_receiver,
             ac_sender,
+            audio_control: None,
         };
         audio.setup_stream();
         audio
@@ -62,7 +64,9 @@ impl Audio {
         };
     }
 
-    pub fn play(&self) {
+    pub fn play(&mut self) {
+        self.setup_stream();
+
         let Some(stream) = &self.stream else {
             log::error!("Failed to play stream: Stream is not setup (bad device/config?)");
             return;
@@ -85,6 +89,7 @@ impl Audio {
     }
 
     pub fn set_audio_control(&mut self, audio_control: AudioControl) {
+        self.audio_control = Some(audio_control.clone());
         if let Err(err) = self.ac_sender.send(audio_control) {
             log::error!("Unable to send AudioControl to callback: {err}");
         }
@@ -97,7 +102,7 @@ impl Audio {
         self.volume.store(volume, Ordering::Relaxed)
     }
 
-    fn setup<T>(&self) -> Option<Stream>
+    fn setup<T>(&mut self) -> Option<Stream>
     where
         T: SizedSample + FromSample<f32>,
     {
@@ -108,7 +113,7 @@ impl Audio {
         let mut last = 0f32;
         let volume = self.volume.clone();
         let ac_receiver = self.ac_receiver.clone();
-        let mut audio_control: Option<AudioControl> = None;
+        let mut audio_control = self.audio_control.clone();
 
         match config.channels {
             2 => {

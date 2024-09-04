@@ -194,7 +194,8 @@ impl TemplateApp {
                     }
                 }
             }
-            _ => (),
+            Some(Event::Resume) => self.audio.play(),
+            None => (),
         }
     }
 
@@ -836,6 +837,7 @@ pub enum Event {
     OpenRom(Vec<u8>),
     SaveUpload(String, Vec<u8>),
     BootromUpload(GameboyType, Vec<u8>),
+    Resume,
 }
 
 #[derive(Copy, Clone)]
@@ -871,6 +873,8 @@ pub(crate) fn open(events: &Events, filter: &[(&str, &[&str])], event_type: Even
                     events.push(Event::BootromUpload(gb_type, data))
                 }
             }
+        } else {
+            events.push(Event::Resume);
         }
         show_canvas()
     };
