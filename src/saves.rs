@@ -213,7 +213,7 @@ impl Saves {
 
                     if ui.button("⬇").clicked() {
                         let _ = Saves::download_helper(&format!("{key_field}.sav"), item);
-                        ui.close_menu();
+                        ui.close();
                     }
 
                     if ui.button("X").clicked() {

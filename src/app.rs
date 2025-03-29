@@ -500,7 +500,7 @@ impl eframe::App for TemplateApp {
                         self.menu_visible = !self.menu_visible;
                     }
 
-                    egui::widgets::global_dark_light_mode_buttons(ui);
+                    egui::widgets::global_theme_preference_buttons(ui);
 
                     let mut style = (*ctx.style()).clone();
                     for (_text_style, font_id) in style.text_styles.iter_mut() {

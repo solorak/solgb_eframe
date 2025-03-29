@@ -1,1 +1,2 @@
-[build]
+[tools]
+wasm_opt = "version_119"
